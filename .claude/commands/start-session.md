@@ -1,3 +1,2 @@
-# /start-session
-
-Run `docs/ai-handoff-protocol.md`, section "Starting a new AI session".
+Read `.agentflow/commands/start-session.md` and follow its instructions.
+Arguments: $ARGUMENTS

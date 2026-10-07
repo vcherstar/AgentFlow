@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Task gates: Task File parsing, launch preflight, acceptance verify, Stage check.
 
-  python tools/gate.py verify T-007      acceptance evidence for one task; appends to tasks/.runtime/T-007.verify.json
-  python tools/gate.py stage 2           every Stage 2 task done and its Checks pass on the main branch
+  python .agentflow/tools/gate.py verify T-007      acceptance evidence for one task; appends to .agentflow/tasks/.runtime/T-007.verify.json
+  python .agentflow/tools/gate.py stage 2           every Stage 2 task done and its Checks pass on the main branch
 
-Used by tools/run-task.ps1 (pure logic here, side effects there):
-  python tools/gate.py task T-007 --out f.json
-  python tools/gate.py preflight T-007 [--manual] [--live T-1,T-2] --out f.json
-  python tools/gate.py endcheck T-007 --out f.json
+Used by .agentflow/tools/run-task.ps1 (pure logic here, side effects there):
+  python .agentflow/tools/gate.py task T-007 --out f.json
+  python .agentflow/tools/gate.py preflight T-007 [--manual] [--live T-1,T-2] --out f.json
+  python .agentflow/tools/gate.py endcheck T-007 --out f.json
 
-Rules: docs/ai-handoff-protocol.md. Exit code: 0 pass, 1 fail, 2 gate error.
+Rules: .agentflow/docs/ai-handoff-protocol.md. Exit code: 0 pass, 1 fail, 2 gate error.
 """
 import argparse
 import hashlib
@@ -24,9 +24,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ledger  # noqa: E402
+from paths import FLOW_ROOT, REPO_ROOT  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent.parent
-TASKS = ROOT / "tasks"
+ROOT = REPO_ROOT
+TASKS = FLOW_ROOT / "tasks"
 RUNTIME = TASKS / ".runtime"
 SHA = r"[0-9a-fA-F]{7,40}"
 VERDICTS = ["pass", "partial", "unverified", "fail"]  # worst last
@@ -87,7 +88,7 @@ def overlap(a, b):  # same file, one folder contains the other, or a glob matche
 def task_file(tid):
     hits = sorted(TASKS.glob(f"{tid}-*.md"))
     if not hits:
-        raise TaskError(f"Task File tasks/{tid}-*.md not found")
+        raise TaskError(f"Task File .agentflow/tasks/{tid}-*.md not found")
     return hits[0]
 
 
@@ -108,16 +109,17 @@ def parse(tid):
     """Fields of one Task File. Raises TaskError when a role-required field is missing or malformed."""
     f = task_file(tid)
     text = f.read_text(encoding="utf-8-sig")
-    t = {"id": tid, "file": str(f), "rel": f"tasks/{f.name}", "role": field(text, "Role"),
-         "branch": field(text, "Branch"), "worktree": field(text, "Worktree"),
-         "depends": re.findall(r"T-\d+", field(text, "Depends on") or ""),
+    head = header(text)  # fields come from the header only: a worker report may contain "Target:" etc.
+    t = {"id": tid, "file": str(f), "rel": f.relative_to(ROOT).as_posix(), "role": field(head, "Role"),
+         "branch": field(head, "Branch"), "worktree": field(head, "Worktree"),
+         "depends": re.findall(r"T-\d+", field(head, "Depends on") or ""),
          "allowed": paths(section(text, "Allowed files")), "denied": paths(section(text, "Do not touch")),
          "rebuild": [w for b in bullets(section(text, "Rebuild together")) if re.search(r"[a-z0-9]", w := b.replace("`", "").split()[0].lower())],
          "checks": commands(section(text, "Checks")), "acceptance": bullets(section(text, "Acceptance criteria")),
-         "independent": field(text, "Independent check"), "target": "local", "env": {}, "setup": [],
+         "independent": field(head, "Independent check"), "target": "local", "env": {}, "setup": [],
          "headerHash": sha256(header(text)), "result": section(text, "Result")}
-    t["prompt"] = (f"Your role: roles/{t['role']}.md. Your task: {f}. "
-                   "Follow docs/ai-handoff-protocol.md, section 'Starting a role session'.")
+    t["prompt"] = (f"Your role: .agentflow/roles/{t['role']}.md. Your task: {f}. "
+                   "Follow .agentflow/docs/ai-handoff-protocol.md, section 'Starting a role session'.")
     setup = section(text, "Setup") + "\n" + section(text, "Port")
     for m in re.finditer(r"(?m)^[ \t]*-[ \t]*(link|copy|env)[ \t]*:[ \t]*(.+?)[ \t]*$", setup):
         if m.group(1) == "env":
@@ -129,26 +131,26 @@ def parse(tid):
         t["env"]["PORT"] = m.group(1)
 
     role = t["role"]
-    if role in ("tester", "deployer") and (tg := field(text, "Target")):
+    if role in ("tester", "deployer") and (tg := field(head, "Target")):
         if tg not in ("staging", "prod"):
             raise TaskError(f"Target '{tg}': expected staging or prod")
         t["target"] = tg
     if role == "developer":
         t["workdir"] = t["worktree"]
     elif role == "tester":
-        m = re.match(rf"^(T-\d+)\s*@\s*({SHA})$", field(text, "Verifies") or "")
+        m = re.match(rf"^(T-\d+)\s*@\s*({SHA})$", field(head, "Verifies") or "")
         if not m:
             raise TaskError('tester task needs "Verifies: T-xxx @ <SHA>"')
         t["sha"] = m.group(2).lower()
         cf = task_file(m.group(1))
         ct = cf.read_text(encoding="utf-8-sig")
-        t["checked"] = {"id": m.group(1), "file": str(cf), "branch": field(ct, "Branch"),
-                        "worktree": field(ct, "Worktree"), "result": section(ct, "Result")}
+        t["checked"] = {"id": m.group(1), "file": str(cf), "branch": field(header(ct), "Branch"),
+                        "worktree": field(header(ct), "Worktree"), "result": section(ct, "Result")}
         if not t["checked"]["worktree"]:
             raise TaskError(f"checked task {cf.name} has no Worktree")
         t["workdir"] = f"{t['checked']['worktree']}.{tid.lower()}"  # disposable checkout of the checked commit
     elif role == "deployer":
-        m = re.match(rf"^({SHA})", field(text, "Deploys") or "")
+        m = re.match(rf"^({SHA})", field(head, "Deploys") or "")
         if not m:
             raise TaskError('deployer task needs "Deploys: <SHA>"')
         t["sha"] = m.group(1).lower()
@@ -264,13 +266,14 @@ def preflight(tid, manual, live):
         if oid in live and t["env"].get("PORT") and t["env"].get("PORT") == o["env"].get("PORT"):
             bad.append(f"PORT={t['env']['PORT']} is used by running {oid}")
 
-    # project rules: "## Preflight" in docs/engineering-rules.md and/or AGENTS.md, for commands that run against local
+    # project rules: "## Preflight" in .agentflow/docs/engineering-rules.md and/or AGENTS.md, for commands that run against local
     #   - deny: <regex>                  no Checks command or Setup line may match
     #   - require: <regex> => <regex>    a Checks command matching the first must match the second
     if t["target"] == "local":
         text = Path(t["file"]).read_text(encoding="utf-8-sig")
         run = t["checks"] + bullets(section(text, "Setup"))
-        for src in (ROOT / "docs" / "engineering-rules.md", ROOT / "AGENTS.md"):
+        for src in (FLOW_ROOT / "docs" / "engineering-rules.md",
+                    FLOW_ROOT / "docs" / "project-rules.md", ROOT / "AGENTS.md"):
             if not src.exists():
                 continue
             for r in bullets(section(src.read_text(encoding="utf-8-sig"), "Preflight")):
@@ -349,7 +352,7 @@ def verify(tid):
     log = RUNTIME / f"{tid}.verify.{n}.log"
 
     if not att:
-        bad.append("no attempt in runtime state (every attempt starts through tools/run-task.ps1)")
+        bad.append("no attempt in runtime state (every attempt starts through .agentflow/tools/run-task.ps1)")
     elif att.get("status") != "exited":
         bad.append(f"last attempt {att.get('n')} is '{att.get('status')}', needs 'exited'")
     if att and att.get("baseline", {}).get("taskHash") != t["headerHash"]:
@@ -362,6 +365,8 @@ def verify(tid):
     if t["role"] == "developer":
         m = re.match(rf"^({SHA})", result_field(t, "Change") or "")
         sha = m.group(1).lower() if m else None
+        if sha and len(sha) < 40:  # a short SHA in the Result: record the full one, as the ledger and testers expect
+            sha = (git("rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}") or sha).lower()
         wt = Path(t["worktree"] or "")
         if not sha:
             bad.append('Result needs "Change: <commit SHA>"')

@@ -1,0 +1,261 @@
+# AI Project Memory Protocol
+
+Purpose: keep project context across long AI-assisted work, tools, and sessions: one session, or a team of role sessions.
+
+This file is the single source of truth. Entry points (`AGENTS.md`, `CLAUDE.md`, `.claude/commands/`), role files, README, and the guide point here by section name instead of repeating rules. Scripts in `.agentflow/tools/` enforce it; a script that disagrees with it is a defect in the script. Change a rule here, once. Everything AgentFlow owns lives in `.agentflow/` ([.agentflow/README.md](../README.md)); the repository root holds only small entry points, so AgentFlow never collides with a project's own `docs/`, `tasks/` or `tools/`.
+
+## Terms
+
+- Canonical Memory - the official project state: `.agentflow/state/`, `.agentflow/docs/project-plan.md`, `runbook/`. One writer: [Roles and memory ownership](#section-roles-and-memory-ownership). Files: [What goes where](#what-goes-where).
+- Single Mode - a session without a role; it works and writes Canonical Memory itself. Team Mode - sessions started with a role ([Starting a role session](#section-starting-a-role-session)).
+- Role file - instructions for one role in `.agentflow/roles/`: [orchestrator](../roles/orchestrator.md) (splits goals into tasks, decides on Results, the only writer of Canonical Memory in Team Mode) and the workers [developer](../roles/developer.md) (changes code for one task), [tester](../roles/tester.md) (checks one task), [deployer](../roles/deployer.md) (deploys one accepted commit).
+- Task File - one unit of work for one worker, `.agentflow/tasks/T-NNN-slug.md`, written by the Orchestrator from [.agentflow/tasks/_template.md](../tasks/_template.md). Its `## Checks` are the exact commands that prove its `Acceptance criteria`; the worker and acceptance run them verbatim.
+- Result - the `## Result` section of a Task File, written by its worker: `Outcome` plus the role result ([Task lifecycle](#section-task-lifecycle)); format in the role file. It is everything after the last line that is exactly `## Result`; the worker appends there and changes nothing above it, blank lines included. A Task File header never contains that heading text anywhere else (write "Result section"), and no Result line starts with a header field name and a colon (`Target:`, `Role:` ...).
+- Attempt - one launch of a worker for a task, recorded by the launcher ([Runtime state](#runtime-state)).
+- Task Ledger - [.agentflow/state/tasks.md](../state/tasks.md), one row per task. Stage - one roadmap step in `.agentflow/docs/project-plan.md`; each task belongs to one.
+- Tool Routing - [.agentflow/roles/tool-routing.md](../roles/tool-routing.md): which tool takes which task; read by the Orchestrator only.
+- Project rules - the project's own rules: `.agentflow/docs/project-rules.md` (and `.agentflow/docs/engineering-rules.md` if the project has one), plus any rules in `AGENTS.md` outside the AgentFlow block; never overwritten by a template update. They name the `<worktrees>` folder and may hold `## Preflight` and `## Tool routing`.
+- Review isolation - a Tester cannot change the Developer artifact it checks: it works in a disposable checkout of the `Verifies` commit, and after the attempt the launcher checks that the checked branch, worktree, and Task File did not change. Codex enforces it with a sandbox; for Claude only that end check guards it.
+
+## What goes where
+
+- `.agentflow/state/handoff.md` - short transfer note for the next session.
+- `.agentflow/state/current-step.md` - only the next practical action.
+- `.agentflow/state/session-log.md` - chronological work history.
+- `.agentflow/state/known-issues.md` - failed attempts, dead ends, false hypotheses, constraints; dated, with when to look again.
+- `.agentflow/state/decisions.md` - important decisions: why, and what was rejected.
+- `.agentflow/state/tasks.md` - Task Ledger, edited only with `python .agentflow/tools/ledger.py`.
+- `.agentflow/docs/project-plan.md` - roadmap: stages with Exit criteria and state.
+- `runbook/` - verified steps only ([Updating the runbook](#section-updating-the-runbook)); `screenshots/` - images linked from it.
+- `.agentflow/roles/`, `.agentflow/commands/`, `.agentflow/tasks/_template.md`, `.agentflow/tools/` (launcher `run-task.ps1`, gates `gate.py`, ledger `ledger.py`, acceptance `accept.py`, installer `install.py`), `.agentflow/dashboard/` (the human's read-only view), `.agentflow/tests/` - template-owned ([Installing or updating AgentFlow](#section-installing-or-updating-agentflow)); change them only to fix the template itself.
+- `.agentflow/tasks/T-NNN-slug.md` - Task Files.
+
+### Planning levels
+
+| File | Level | Horizon | Answers |
+|---|---|---|---|
+| `.agentflow/docs/project-plan.md` | Stage | weeks | where we are going, what closes the stage |
+| `.agentflow/state/tasks.md` | Task | hours | who does which piece, in which state |
+| `.agentflow/state/current-step.md` | Next action | now | what exactly to do next ("when T-104 is done, give T-105 to the tester") |
+| `.agentflow/state/handoff.md` | Snapshot | one session | where the last session stopped, what to read first |
+
+Each level links to the others and never copies them: the plan lists no tasks (tasks name their Stage), current-step refers to task IDs, handoff links to the other three. Single Mode: the ledger is optional.
+
+## Standing rules
+
+Apply to every session and role (after the Karpathy guidelines: think first, simplicity, surgical changes, goal-driven work).
+
+Rule order: this file > Project rules (including nested `AGENTS.md`) > role file > Task File. Lower levels add specifics and cannot cancel or weaken higher ones. Imperatives are mandatory; "prefer" is a default you may leave with a stated reason. An explicit instruction from the human overrides a rule for the current session only, noted by the Orchestrator in the ledger `Notes` or `.agentflow/state/decisions.md`; it never covers secrets, review isolation, or production approval.
+
+- Inspect relevant project files before assuming or asking.
+- Unclear request or several readings: state your assumptions or ask; do not pick silently.
+- Prefer the smallest change that does the job: no speculative features, abstractions, or settings.
+- Change only the files and lines the task needs; keep existing style and unrelated work. Clean up only what your own change made unused.
+- Before work, define how success will be checked (test, command, screenshot).
+- Never write passwords, tokens, keys, recovery codes, cookies, or other secrets to Markdown.
+- Do not invent screenshots or files; link a screenshot only if it exists in `screenshots/`.
+- Do not repeat failed attempts listed in `.agentflow/state/known-issues.md`.
+- Talk to the human in Russian unless Project rules name another language: an optional `Status: <LABEL>` line, then a short explanation that adds information; do not repeat the status in words or quote this file unless asked. Machine-facing files (rules, roles, Task Files, memory) stay in English; a human explanation is written from them when needed, never stored as a second copy.
+
+## Section: Roles and memory ownership
+
+Single Mode: you follow every section yourself, including writing Canonical Memory. Team Mode:
+
+| | Orchestrator | Developer | Tester | Deployer |
+|---|---|---|---|---|
+| Write Canonical Memory and Task Files | only writer | own `## Result` | own `## Result` | own `## Result` |
+| Change product code | no | within `Allowed files` | no | no |
+| Commit | memory and `.agentflow/tasks/` | one per task | no | no |
+| Merge | after acceptance | no | no | no |
+| Deploy, server, production | no | no | checks without changes | yes; production after the human's yes in the Deployer session |
+
+1. Workers never run Updating memory, Handoff, or Updating the runbook; they propose in `Proposed memory updates`, and the Orchestrator decides.
+2. One task = one fresh session.
+3. Parallel tasks share no file in `Allowed files`; each developer task has its own worktree.
+4. A worker that cannot continue writes `Outcome: blocked` with the question and stops: no guessing, no widening the task.
+5. Workers start no sub-agents or parallel agents; only the Orchestrator decides what runs in parallel, as separate sessions.
+6. Results are short and in the role file format; no reports on internal tools or token usage.
+
+## Section: Git rules
+
+Developer: branches and commits. Orchestrator: merges and cleanup. Tester and Deployer change no git state.
+
+1. One task = one branch `t-NNN-slug` + one worktree `<worktrees>\<repo>-t-NNN-slug`, both in the Task File. `<worktrees>` is one folder outside the repository and outside cloud sync (for example `D:\tmp`), named in Project rules; not named: ask the human before the first developer task. Several repositories: the same branch name in each.
+2. The main folder stays on the main branch (`main` or `master`) and belongs to the Orchestrator: memory, `.agentflow/tasks/`, merges. Developers change nothing there except their own `## Result`.
+3. The launcher creates the worktree, also for `-Manual`. Check that the current folder is `Worktree` and the branch is `Branch`; anything else: `blocked`.
+4. No mixing tasks in one branch; no carrying changes through stash or a shared branch.
+5. One commit per task, `[T-NNN] <type>: <what>`; before finishing, the branch holds only this task and the worktree nothing uncommitted.
+6. After acceptance the Orchestrator merges, then removes the worktree (`git worktree remove`) and the branch (`git branch -d`), unless the human forbids the merge; rejected or abandoned tasks are cleaned up the same way once the human agrees. If `git worktree remove` fails with `Permission denied` under OneDrive, delete the folder (`Remove-Item -Recurse -Force`), then run `git worktree prune`.
+7. Nobody deletes other tasks' worktrees or branches without the Orchestrator or the human.
+
+## Section: Starting a new AI session
+
+For Single Mode and the Orchestrator.
+
+1. Read this file, then `.agentflow/state/handoff.md`, `.agentflow/docs/project-plan.md`, `.agentflow/state/current-step.md`, and `.agentflow/state/tasks.md` if it has open tasks.
+2. Inspect the referenced files you need before asking.
+3. Summarize: goal, state, open tasks, next step, blockers, files likely to change.
+4. Do not repeat failed attempts from `.agentflow/state/known-issues.md`; do not invent missing context; ask only what the files cannot answer.
+
+## Section: Starting a role session
+
+Input: a role and, for a worker, a Task File path (`/start-role developer .agentflow/tasks/T-101-api.md`).
+
+Orchestrator: read `.agentflow/roles/orchestrator.md`, then run Starting a new AI session.
+
+Worker:
+
+1. Read `.agentflow/roles/<role>.md` and these sections: Terms, Standing rules, Roles and memory ownership (Developer: also Git rules).
+2. Read the Task File completely, the files in its `Read first`, and related entries in `.agentflow/state/known-issues.md`. Not handoff, plan, or current-step unless the Task File lists them.
+3. State task, plan, and assumptions in 3-5 lines, then work to the end without asking for confirmation, except for your role's stop conditions.
+4. Finish by filling `## Result`.
+
+## Section: Task lifecycle
+
+### States
+
+Each family has one owner, and a label means one thing only.
+
+| Family | Where; who writes | Values |
+|---|---|---|
+| Task state | ledger `Status`; Orchestrator via `.agentflow/tools/ledger.py` | `ready`; `in progress` (issued, not decided); `review`; `done` (accepted); `rejected` (successor in `Notes`); `blocked` (waits for a human or another task); `cancelled` (reason in `Notes`) |
+| Process state | `.agentflow/tasks/.runtime/T-NNN.json`; launcher | per attempt `running`, `exited` (exit 0, or a manual attempt marked finished), `error`; `-Status` derives `dead` (running, process gone) |
+| Outcome | `## Result`, `Outcome:`; worker | `completed`; `blocked` (question in the Result); `failed` (why in the Result) |
+| Role result | `## Result`; worker | Developer `Change: <SHA>`; Tester `Verdict:` `pass`, `partial`, `unverified`, `fail` = the worst criterion; Deployer `Deployment:` `deployed`, `rolled-back`, `not-started` |
+| Stage state | `.agentflow/docs/project-plan.md`; Orchestrator | `planned`, `current`, `closed` |
+
+`.agentflow/tools/ledger.py` enforces the transitions: `ready` -> `in progress` / `blocked` / `cancelled`; `in progress` -> `review` / `blocked` / `rejected` / `cancelled`; `review` -> `done` / `rejected` / `in progress` / `blocked`; `blocked` -> `ready` / `in progress` / `review` / `cancelled`. `done`, `rejected`, `cancelled` are final. Task IDs are never reused.
+
+### Flow
+
+1. The Orchestrator writes the Task File and adds the ledger row (`ready`). `Independent check:` is `tester` for a user-visible or risky change (data, auth, deploy scripts, shared config), otherwise `none - <reason>`; the human sees it in the plan.
+2. Launch ([Launching workers](#section-launching-workers)); ledger `in progress`.
+3. The worker fills `## Result`.
+4. The Orchestrator sets `review` and decides:
+
+| Result | Decision | Task state |
+|---|---|---|
+| `completed`, `python .agentflow/tools/gate.py verify T-NNN` passes | accept: `python .agentflow/tools/accept.py T-NNN` (verify, merge, ledger `done`, worktree and branch cleanup; it stops at the first failure) | `done` |
+| `completed`, verify fails | reject; a new Task File with the findings links to the old one | `rejected`, `Notes: -> T-xxx: <why>` |
+| `blocked` | answer, asking the human if needed | `blocked`, then `in progress` |
+| `failed`, empty Result, attempt `error` or `dead` | [Recovery](#recovery-stale-task) | `in progress` (new attempt) or `rejected` |
+| Tester `Verdict` not `pass` | reject the checked task; the Tester task is `done` when its verify passes | checked task `rejected` |
+| Deployer `rolled-back` | reject the Deployer task; accepted code stays `done` (accepted is not deployed); the fix is a new developer task | Deployer task `rejected` |
+
+5. A Stage closes when its tasks are `done` (rejected or cancelled ones replaced by `done` successors) and `python .agentflow/tools/gate.py stage <N>` passes on the main branch; then update the plan.
+
+### Acceptance
+
+Acceptance is the event `review` -> `done`; `.agentflow/tools/ledger.py` allows it only after `gate.py verify` passed on that SHA. The verify record (`.agentflow/tasks/.runtime/T-NNN.verify.json`: attempt, SHA, target, check exit codes, log) is the evidence. Verify requires:
+
+- the last attempt `exited`, the Task File above `## Result` unchanged, `Outcome: completed`;
+- Developer: branch, clean worktree, and `Change` at one SHA; `git diff <main>...<SHA>` inside `Allowed files`; every `## Checks` command passing there with `AGENTFLOW_TARGET=local`; with `Independent check: tester`, a `done` Tester task with `Verdict: pass` for this SHA;
+- Tester: `Verdict` equal to its worst criterion;
+- Deployer: `Deployment: deployed`, `Smoke` pass, and for production `Approval: source=human target=prod sha=<SHA> at=<time>`.
+
+Beyond verify the Orchestrator does not investigate: a new measurement is a Tester task. When verify notes that the Checks use files the task changed, read that diff first. A stage rule from the plan ("prototype first") is checked here too.
+
+### Runtime state
+
+An `exited` attempt says nothing about the task: only the Result and the ledger do.
+
+1. `.agentflow/tasks/.runtime/T-NNN.json` is written only by `.agentflow/tools/run-task.ps1`: one entry per attempt (tool and arguments, times, exit code, `limitHit`, target, folder, baseline), appended, never overwritten; log `T-NNN.<n>.log`. Not committed.
+2. At the end of every attempt the launcher runs `gate.py endcheck`: the Task File above `## Result` unchanged and, for a Tester, review isolation held. A violation makes the attempt `error`.
+3. The human is not a dispatcher: the Orchestrator polls `.agentflow/tools/run-task.ps1 -Status` slowly (every 2-3 minutes). Attempt ended (`exited`, `error`, `dead`): read the Result and decide. Result filled while an interactive tool is still `running`: read it, decide, then `-Stop`.
+4. One task = one live worker. A `running` attempt is the task's lock; `.agentflow/tasks/.runtime/launch.lock` serializes launches from preflight until the attempt is recorded. Re-issue, Resume, and fallback happen only after the lock is released (the process ended, or `-Stop` on a hung worker). A worker is never declared dead by guess.
+
+### Release order
+
+Parts that depend on each other (a library, then the studio that embeds it, then the site) are listed in the Deployer's Task File in dependency order and deployed in that order. Before the first deploy of the train the Deployer runs the smoke check against the current production, to prove the check is not stale. Each Task File names what is rebuilt with it (`Rebuild together`).
+
+### Recovery: stale task
+
+A worker may vanish (limit, closed session, hang, broken context).
+
+1. The Task File stays the assignment; uncommitted changes in the worktree are an unverified draft, not a Result.
+2. The Orchestrator checks the branch and worktree: commits, uncommitted changes, any partial Result.
+3. A useful commit exists: a new attempt continues from it on the same branch and worktree (`Resume: <commit>`). None: discard the draft in that worktree only, write `Resume: start fresh`, start a new attempt on the same Task File.
+4. The Task ID stays while the scope is unchanged; a changed scope is a new task.
+5. A usage limit (`limitHit` in the attempt, or "usage limit", "rate limit", "quota", "session limit" at the end of the log) is not a task failure. A failed attempt without `limitHit`: read the log tail before deciding; tools word their limits differently. After the lock is released the Orchestrator moves the same Task File to the fallback tool from Tool Routing without asking, notes it in the ledger `Notes`, and follows steps 2-3. The ledger `Tool` column always shows the tool that holds the task.
+
+### Successors and re-tests
+
+1. Stale branch: when the only reason a task fails is that its branch predates a fix already on the main branch, the successor is a merge-only developer task: a branch from the main branch that merges the old branch and changes nothing else, `Independent check: none - <the tester tasks that checked the old commit>`, the full Checks.
+2. Re-test: when a Tester attempt fails for its environment (sandbox, usage limit, an end-check formality) rather than for the product, the next attempt or the successor tester names the earlier evidence folder in `Resume:` and redoes only what is missing.
+3. A Tester on the same tool as the Developer only when no other tool is available; say so in the ledger `Notes`.
+
+## Section: Launching workers
+
+Who: the Orchestrator (or the human). Per tool: Tool Routing.
+
+1. Every attempt starts through `.agentflow/tools/run-task.ps1` and passes the same gate. `T-NNN <tool>` prepares the worktree or checkout and the environment and opens a visible window with a log. `T-NNN -Manual` runs the same gate and preparation for a session a human starts (Antigravity IDE, the Deployer, a live Tester on production), prints folder, environment, and prompt, and is closed with `-MarkFinished`. No hand-written launch scripts.
+2. Visible windows only, unless the human allows otherwise for this session: the window is how the human can stop a worker.
+3. The Deployer and a live Tester on production run only in the session the human designated (`-Manual`). The Orchestrator starts no deployer itself and gives no tool full access to production. Production approval comes from the human in that session, never through the Orchestrator.
+4. Permissions come from the launcher's tool flags, not from prompts. Full access: only a Developer in its own worktree. A Tester gets review isolation; prefer Codex for Tester tasks.
+5. The launcher prepares what the task needs before the start (`## Setup`: links, copies, env); a task `blocked` on a missing environment is an Orchestrator error. Parallel tasks get different `PORT`s (`## Port`); tests read it from the environment.
+6. Machine setup. On Windows a Store-packaged PowerShell does not pass its environment to the window it opens, so the launcher hands `AGENTFLOW_*` variables and `PATH` to the worker through `.agentflow/tasks/.runtime/T-NNN.env.json`; `AGENTFLOW_PYTHON` overrides the Python used for `gate.py` (default: `python`, or `py -3` when `python` is the Microsoft Store stub). The worker window has QuickEdit switched off, so a click cannot pause it. In Claude Code the Orchestrator cannot grant itself permission to start workers that skip prompts: the human adds an allow rule for `.agentflow/tools/run-task.ps1` (GUIDE.md).
+7. The human states the remaining limit per tool at session start; the Orchestrator keeps it in the conversation, not in files, and picks fallbacks from it.
+8. **Maximize safe parallelism.** A task is ready when it is `ready` and every `Depends on` task is `done`. Launch every ready task that shares no `Allowed files`, `Port`, or `Rebuild together` with an open one: parallelism = min(ready tasks, free tool capacity, environment capacity). No fixed number of agents; refill a free slot at once.
+9. **Preflight** (`gate.py preflight`) refuses a launch with the full list of problems, before anything is created:
+   - a `Depends on` task not `done`;
+   - Tester: pre-merge, the checked task lacks `Outcome: completed` with `Change` = the `Verifies` SHA, or its branch moved; live, the SHA is not merged. Deployer: the SHA is not merged;
+   - a Deployer or a live Tester on production without `-Manual`;
+   - overlap with an open task (`in progress`, `review`, or a running attempt) in `Allowed files` or `Rebuild together`, or a `Port` of a running attempt; an open task whose Task File cannot be read;
+   - the task itself: `Allowed files` inside `Do not touch`; empty or template `Acceptance criteria` or `## Checks`; a developer task without `Independent check` or with a `Branch` not starting with `t-NNN-`; a missing `## Setup` source; `env: AGENTFLOW_*`;
+   - project patterns from `## Preflight` in Project rules, applied to the `## Checks` commands and `## Setup` lines of local tasks: `- deny: <regex>` (no command may match: production hosts, destructive commands) and `- require: <regex> => <regex>` (for example `playwright test => --project=local`).
+
+   A refused launch is fixed in the Task File, not worked around.
+10. **Production is opt-in.** Every worker gets `AGENTFLOW_TARGET`: `local`, or the task's `Target` (`staging` / `prod`) for a live Tester or the Deployer; a Task File cannot override it. Project test and run configs default to local: unset or `local` never reaches staging or production. A config that can reach production by default is a defect: the Orchestrator issues a developer task to fix it before other work that runs those tests.
+
+## Section: Updating memory
+
+Who: Single Mode or the Orchestrator, after meaningful work or before ending a long session.
+
+1. `.agentflow/state/handoff.md`: per Handoff below.
+2. `.agentflow/state/current-step.md` if the next step changed; `.agentflow/state/tasks.md` through `ledger.py`.
+3. `.agentflow/state/session-log.md`: what was done or changed.
+4. `.agentflow/state/decisions.md`: a choice that changes future work, dated, with why and what was rejected.
+5. `.agentflow/state/known-issues.md`: a dead end, error, false lead, or constraint.
+6. `.agentflow/docs/project-plan.md` if the roadmap changed.
+7. Accepted `Proposed memory updates` go into these files; a rejected one gets a line with the reason in the session log.
+
+## Section: Handoff (short transfer note)
+
+Who: Single Mode or the Orchestrator. Update only `.agentflow/state/handoff.md`:
+
+- As of: date and `main@<SHA>`
+- Goal
+- Verified state (each fact with where it was checked)
+- Files in flight; changed since the last handoff
+- Failed attempts and false leads; assumptions; open problems
+- Files to read first
+
+Keep it, and `.agentflow/state/current-step.md`, within 1-2 screens (about 4 KB); move finished history to the session log in the same update. Open tasks live in the ledger and the next action in current-step, not here. Rules that must survive a new session or another tool belong in `.agentflow/state/decisions.md` or Project rules, never only in one tool's private memory.
+
+## Section: Updating the runbook
+
+Who: Single Mode or the Orchestrator, only after a step is confirmed to work; the Deployer proposes steps in its Result. Update the human-facing instruction in `runbook/` (a project-specific file, or `runbook/clean-instruction.md`; create it if missing) with only: the verified steps, exact commands or UI actions, the expected result of each step, links to existing screenshots, final verification. No failed attempts, diagnostics, hypotheses, or secrets. A missing screenshot: a TODO for the human, never an invented filename.
+
+End of session (Single Mode or Orchestrator): Updating the runbook (if a verified step changed), Updating memory, Handoff. A worker session ends with its Result.
+
+## Section: Dashboard
+
+For the human, not for agents: a read-only view of the ledger, Task Files, and git history. `python .agentflow/dashboard/build.py` writes `.agentflow/dashboard/out/index.html` (task table, filters, task card) and `out/graph.html` (Gantt, timeline, links). Any session or the human may run it; it changes nothing outside `.agentflow/dashboard/out/`. Its interface is in Russian (human-facing).
+
+1. It shows what the files say and invents nothing. Statuses, roles, and outcomes are this protocol's states under Russian labels; the ledger `Status`, the worker's `Outcome`, and the tester's `Verdict` stay three separate fields. A field it cannot read is empty or "Not set", never a guess; a value it estimates (who set the task) is labeled as an estimate.
+2. `.agentflow/dashboard/` is template-owned: change it only to fix the template or on the human's request. Rules for changing it: `.agentflow/dashboard/UI-RULES.md`; before a noticeable change `python .agentflow/dashboard/snapshot.py save "<what>"`, roll back with `restore vN`. `.agentflow/dashboard/out/` and `.agentflow/dashboard/versions/` are local and git-ignored.
+3. Changing a state or field name in this protocol means updating the data contract in `.agentflow/dashboard/README.md` and `.agentflow/dashboard/build.py` in the same commit.
+4. The Orchestrator does not read the dashboard to decide: the ledger and `gate.py verify` are the evidence.
+
+## Section: Installing or updating AgentFlow
+
+Who: a Single Mode session, on the human's request. Version: `.agentflow/VERSION` (also shown in the AgentFlow block of `AGENTS.md`). Tool: `python <template>/.agentflow/tools/install.py <project> [--update] [--dry-run]`; run it with `--dry-run` first and show the human the list.
+
+- Template-owned, replaced on update: `.agentflow/README.md`, `.agentflow/VERSION`, this file, `.agentflow/roles/`, `.agentflow/commands/`, `.agentflow/tasks/_template.md`, `.agentflow/tools/`, `.agentflow/dashboard/`, `.agentflow/tests/`; the block between `agentflow:begin` and `agentflow:end` in `AGENTS.md`, `CLAUDE.md` and `.gitignore`; the one-line pointers in `.claude/commands/`.
+- Project-owned, never overwritten: everything else (`.agentflow/state/`, `.agentflow/docs/project-plan.md`, `.agentflow/docs/project-rules.md`, Task Files, `runbook/`, `screenshots/`, and every line of `AGENTS.md`, `CLAUDE.md` and `.gitignore` outside the block). The installer creates missing project-owned files from stubs.
+- Template-only, never copied: the template's `README.md`, `GUIDE.md`, `CHANGELOG.md`, `LICENSE`, its own `.agentflow/state/` and `.agentflow/docs/project-plan.md`.
+- A project rule never goes into a template-owned file, only into Project rules.
+
+Install: the target is the root of a git repository with a main branch and one commit (a folder holding several repositories is not supported yet). The installer refuses an existing `.agentflow/`, a 2.1 root layout, and a non-git folder; it deletes nothing. Then: rules already in the project's `CLAUDE.md` / `AGENTS.md` stay where they are (lines outside the block are Project rules) or move into `.agentflow/docs/project-rules.md` with the human's agreement; create the memory from the real project state ([What goes where](#what-goes-where); `python .agentflow/tools/ledger.py show` creates the ledger); in Project rules name `<worktrees>` and add `## Preflight` (deny production hosts, require the local flags of test commands). A test config that reaches staging or production by default: tell the human, do not fix it here. No product code changes; one commit.
+
+Update: compare `.agentflow/VERSION` with the template's and read the template's `CHANGELOG.md` entries in between. Show the human the rules the project added inside template-owned files; after agreement move them to Project rules. `install.py --update` refuses while a template-owned file has uncommitted changes and lists files the project added inside `.agentflow/` (it keeps them). Apply the migration notes to open Task Files and the ledger; touch no other project-owned file; add a dated entry to `.agentflow/state/decisions.md`; one commit.

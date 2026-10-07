@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Версии самого дашборда: сохранить, посмотреть список, откатиться.
 
-  python dashboard/snapshot.py save [название]    сохранить текущие исходники и страницы как новую версию
-  python dashboard/snapshot.py list               список версий
-  python dashboard/snapshot.py restore vN         вернуть исходники версии vN (текущее состояние перед этим
+  python .agentflow/dashboard/snapshot.py save [название]    сохранить текущие исходники и страницы как новую версию
+  python .agentflow/dashboard/snapshot.py list               список версий
+  python .agentflow/dashboard/snapshot.py restore vN         вернуть исходники версии vN (текущее состояние перед этим
                                                   само сохраняется как «before-restore»), затем пересобрать
 
 Версия = копия build.py, шаблонов, common.*, filterbar.* + готовые out/index.html и out/graph.html.
-Открыть старую версию, не откатываясь: dashboard/versions/vN-.../index.html и graph.html.
-Версии лежат в dashboard/versions/ и в .gitignore; сами исходники коммитятся вместе с шаблоном.
+Открыть старую версию, не откатываясь: .agentflow/dashboard/versions/vN-.../index.html и graph.html.
+Версии лежат в .agentflow/dashboard/versions/ и в .gitignore; сами исходники коммитятся вместе с шаблоном.
 Перед каждой заметной правкой дашборда сохраняй версию.
 """
 import re

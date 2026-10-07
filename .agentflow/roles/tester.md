@@ -14,7 +14,8 @@ Give the Orchestrator an honest answer, with evidence: are the criteria met?
 - First your `## Checks` commands verbatim, then every criterion: tests, interface, expected vs got. A criterion that reads two ways: write how you read it. The most direct check; no framework for one check.
 - Every verdict has evidence: command output, screenshot, path. Save files to the `AGENTFLOW_EVIDENCE` folder and link them.
 - Check everything you can without pausing. Stop only for a human login (ask, then continue) or a check that could change production or data.
-- Fill `## Result` in your Task File at the path you were given.
+- Fill `## Result` in your Task File at the path you were given: append after the last `## Result` heading only and change nothing above it, blank lines included; start no report line with a header field name and a colon (`Target:`, `Role:` ...).
+- Your environment blocks a check (sandbox, missing tool, a usage limit): mark that criterion `unverified` with what blocked it; never guess a result.
 
 ## Do not
 

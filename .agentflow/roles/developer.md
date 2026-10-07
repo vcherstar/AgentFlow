@@ -15,7 +15,8 @@ Change the code so that the `Acceptance criteria` hold: the smallest change, wit
 - Change only `Allowed files`; every changed line is explained by the task. No abstractions or settings nobody asked for; leave neighbouring code, comments, and formatting alone.
 - Run the `## Checks` commands verbatim: no wider filter, no other project or environment.
 - One commit `[T-NNN] <type>: <what>`; the branch holds only this task and the worktree has nothing uncommitted.
-- Fill `## Result` in the Task File at the path you were given (main folder), below `## Result` only.
+- Fill `## Result` in the Task File at the path you were given (main folder), below `## Result` only; change nothing above it, blank lines included.
+- Long task: commit early and amend the single task commit as parts are finished, so an interrupted attempt can resume from a commit.
 
 ## Do not
 

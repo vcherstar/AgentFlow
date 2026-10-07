@@ -17,3 +17,10 @@ Chronological log of work on the AgentFlow template.
 ## 2026-10-03
 
 - FPF audit of all files; refactor to 2.0.0 in five commits: P0 enforcement, P1 state and evidence, P2 rule order and contradictions, P3 template vs project, P4 English machine-facing text. Details: `CHANGELOG.md`, `state/decisions.md`.
+
+## 2026-10-07: 2.2.0
+
+- Moved the template into `.agentflow/` with `git mv`; ported the ClearMark Flow adaptation (`paths.py`, relocated
+  paths, dashboard history and links, layout tests) and its fixes; added `install.py`, `accept.py`, VERSION, tests.
+- Protocol, roles, tool routing, Task File template, README, GUIDE, CHANGELOG updated. 19 tests pass.
+

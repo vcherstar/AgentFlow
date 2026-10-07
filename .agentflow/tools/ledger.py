@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Edit the Task Ledger (state/tasks.md) without one-off scripts.
+"""Edit the Task Ledger (.agentflow/state/tasks.md) without one-off scripts.
 
-  python tools/ledger.py add T-007 --title "Fix login" --stage 2 --role developer \
+  python .agentflow/tools/ledger.py add T-007 --title "Fix login" --stage 2 --role developer \
       --tool codex --status ready --depends "T-006" --notes "..."
-  python tools/ledger.py set T-007 --status review
-  python tools/ledger.py set T-007 --status done --commit abc1234      # acceptance: needs a passing gate.py verify on that SHA
-  python tools/ledger.py set T-007 --status rejected --notes "-> T-012: <why>"
-  python tools/ledger.py show [T-007]
+  python .agentflow/tools/ledger.py set T-007 --status review
+  python .agentflow/tools/ledger.py set T-007 --status done --commit abc1234      # acceptance: needs a passing gate.py verify on that SHA
+  python .agentflow/tools/ledger.py set T-007 --status rejected --notes "-> T-012: <why>"
+  python .agentflow/tools/ledger.py show [T-007]
 
-Only the Orchestrator (or a Single Mode session) runs this. Transitions follow docs/ai-handoff-protocol.md,
+Only the Orchestrator (or a Single Mode session) runs this. Transitions follow .agentflow/docs/ai-handoff-protocol.md,
 "Task lifecycle". A '|' inside a value is replaced with '/'. Task IDs are never reused.
 """
 import argparse
@@ -17,6 +17,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from paths import FLOW_ROOT
 
 COLS = ["ID", "Title", "Stage", "Role", "Tool", "Status", "Depends on", "Commit / artifact", "Notes", "Updated"]
 FIELD = {  # CLI option -> column
@@ -32,11 +33,11 @@ NEXT = {  # allowed status transitions; done, rejected, cancelled are final
 }
 NEEDS_NOTES = {"rejected", "cancelled"}
 PLACEHOLDER = re.compile(r"^\s*No tasks yet\.?\s*$", re.I)
-HEAD = "# Task Ledger\n\nWritten only through `python tools/ledger.py`. Statuses: docs/ai-handoff-protocol.md, \"Task lifecycle\".\n\n"
+HEAD = "# Task Ledger\n\nWritten only through `python .agentflow/tools/ledger.py`. Statuses: .agentflow/docs/ai-handoff-protocol.md, \"Task lifecycle\".\n\n"
 
 
 def root() -> Path:
-    return Path(__file__).resolve().parent.parent
+    return FLOW_ROOT
 
 
 def ledger_path() -> Path:
@@ -139,7 +140,7 @@ def main() -> None:
         if a.status == "done":
             sha = a.commit or rows[i][cols.index("Commit / artifact")]
             if not verified(a.id, sha):
-                sys.exit(f"{a.id}: no passing verify on commit '{sha}'. Run: python tools/gate.py verify {a.id}")
+                sys.exit(f"{a.id}: no passing verify on commit '{sha}'. Run: python .agentflow/tools/gate.py verify {a.id}")
 
     for opt, col in FIELD.items():
         v = getattr(a, opt)

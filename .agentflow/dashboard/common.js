@@ -132,7 +132,7 @@ const C=(function(){
       ${dd("Коммит / артефакт в реестре",esc(t.commit))}
       ${rc?dd("Коммит, указанный исполнителем в отчёте",`<code>${esc(rc.sha)}</code> ${MUT(`(строка «${esc(rc.label)}» отчёта: ${esc(rc.line)}) · не означает, что коммит принят в main`)}`):""}
       ${dd("Объём изменений",sizeFull(t))}
-      ${t.file?dd("Файл",`<a href="../${t.file}">${t.file}</a>`):""}
+      ${t.file?dd("Файл",`<a href="${esc(t.fileHref)}">${esc(t.file)}</a>`):""}
     </dl></div>`;
   }
   function bindCard(root,onGo){

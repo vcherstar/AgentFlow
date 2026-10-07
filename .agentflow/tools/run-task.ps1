@@ -3,24 +3,29 @@
   Launch one worker attempt for one task and track its process state.
 
 .EXAMPLE
-  tools\run-task.ps1 T-007 codex          # launch a developer or tester task in a visible window
-  tools\run-task.ps1 T-007 -Manual        # same gate and preparation, no process: a human starts the tool
-  tools\run-task.ps1 -Status              # process state of the last attempt of every task
-  tools\run-task.ps1 T-007 -Stop          # kill a hung worker (whole process tree), release the lock
-  tools\run-task.ps1 T-007 -MarkFinished  # a manual attempt has finished
+  .agentflow\tools\run-task.ps1 T-007 codex          # launch a developer or tester task in a visible window
+  .agentflow\tools\run-task.ps1 T-007 -Manual        # same gate and preparation, no process: a human starts the tool
+  .agentflow\tools\run-task.ps1 -Status              # process state of the last attempt of every task
+  .agentflow\tools\run-task.ps1 T-007 -Stop          # kill a hung worker (whole process tree), release the lock
+  .agentflow\tools\run-task.ps1 T-007 -MarkFinished  # a manual attempt has finished
 
 .DESCRIPTION
-  Rules: docs/ai-handoff-protocol.md, sections "Runtime state" and "Launching workers".
-  Task File parsing, preflight and end-of-attempt checks: tools/gate.py. This script does the side effects:
+  Rules: .agentflow/docs/ai-handoff-protocol.md, sections "Runtime state" and "Launching workers".
+  Task File parsing, preflight and end-of-attempt checks: .agentflow/tools/gate.py. This script does the side effects:
   worktrees and checkouts, environment, windows, processes, tasks\.runtime\T-NNN.json (attempt history).
   Tool command lines in $Tools are defaults: verify them once against your installed versions.
   Machine settings are environment variables, not edits of $Tools:
     AGENTFLOW_CODEX       codex executable; wildcards allowed, the newest match wins
     AGENTFLOW_CODEX_ARGS  extra codex exec arguments, space-separated (for example: -m <model>)
+    AGENTFLOW_CLAUDE, AGENTFLOW_AGY, AGENTFLOW_DEVIN   other tool executables (same rules as AGENTFLOW_CODEX)
+    AGENTFLOW_PYTHON      Python 3 executable for gate.py; default: `python` unless it is the Microsoft Store
+                          stub, then `py -3`
+  The worker window receives the launcher's AGENTFLOW_* variables and PATH through tasks\.runtime\T-NNN.env.json:
+  a Store-packaged pwsh does not pass the parent's environment to a window it starts.
 #>
 param(
   [Parameter(Position = 0)][string]$TaskId,
-  [Parameter(Position = 1)][ValidateSet('codex', 'claude', 'agy')][string]$Tool,
+  [Parameter(Position = 1)][ValidateSet('codex', 'claude', 'agy', 'devin')][string]$Tool,
   [switch]$Status,
   [switch]$Stop,
   [switch]$MarkFinished,
@@ -28,17 +33,31 @@ param(
   [switch]$Worker
 )
 $ErrorActionPreference = 'Stop'
-$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$rtDir = Join-Path $root 'tasks\.runtime'
+$flowRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$root = (Resolve-Path (Join-Path $flowRoot '..')).Path
+$rtDir = Join-Path $flowRoot 'tasks\.runtime'
 New-Item -ItemType Directory -Force $rtDir | Out-Null
 $env:PYTHONUTF8 = '1'
 
-$codexExe = 'codex'
-if ($env:AGENTFLOW_CODEX) {   # machine override; wildcards allowed, newest match wins
-  $m = Get-Item $env:AGENTFLOW_CODEX -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
-  $codexExe = if ($m) { $m.FullName } else { $env:AGENTFLOW_CODEX }
+if ($Worker -and $TaskId) {   # environment handed over by the launcher (see .DESCRIPTION)
+  $envFile = Join-Path $rtDir "$TaskId.env.json"
+  if (Test-Path $envFile) {
+    $handed = Get-Content $envFile -Raw -Encoding utf8 | ConvertFrom-Json
+    foreach ($p in $handed.PSObject.Properties) { Set-Item "env:$($p.Name)" $p.Value }
+  }
 }
+
+function Resolve-Exe([string]$name, [string]$override) {   # machine override; wildcards allowed, newest match wins
+  if (-not $override) { return $name }
+  $m = Get-Item $override -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
+  if ($m) { $m.FullName } else { $override }
+}
+$codexExe = Resolve-Exe 'codex' $env:AGENTFLOW_CODEX
 $codexArgs = @(if ($env:AGENTFLOW_CODEX_ARGS) { $env:AGENTFLOW_CODEX_ARGS.Trim() -split '\s+' })
+$python = @(if ($env:AGENTFLOW_PYTHON) { Resolve-Exe 'python' $env:AGENTFLOW_PYTHON }
+  elseif (($c = Get-Command python -ErrorAction SilentlyContinue) -and $c.Source -notmatch '\\WindowsApps\\') { 'python' }
+  elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py'; '-3' }
+  else { 'python' })
 
 # pipe = output goes through Tee into the log (non-interactive mode).
 # Interactive tools (pipe = $false) keep the window until a human exits them; the log is a transcript.
@@ -48,17 +67,20 @@ $Tools = @{
   codex  = @{ exe = $codexExe; pipe = $true
               args = { param($p, $r)
                 if ($r -eq 'developer') { @('exec') + $codexArgs + @('--sandbox', 'danger-full-access', $p) }
-                else { @('exec') + $codexArgs + @('--sandbox', 'workspace-write', '--add-dir', (Join-Path $root 'tasks'), '-c', 'sandbox_workspace_write.network_access=true', $p) } } }
-  claude = @{ exe = 'claude'; pipe = $true   # -p prints the answer only at the end
+                else { @('exec') + $codexArgs + @('--sandbox', 'workspace-write', '--add-dir', (Join-Path $flowRoot 'tasks'), '-c', 'sandbox_workspace_write.network_access=true', $p) } } }
+  claude = @{ exe = (Resolve-Exe 'claude' $env:AGENTFLOW_CLAUDE); pipe = $true   # -p prints the answer only at the end
               args = { param($p, $r) if ($r -eq 'developer') { @('-p', $p, '--dangerously-skip-permissions') } else { @('-p', $p, '--allowedTools', 'Read,Grep,Glob,Bash,Edit') } } }
-  agy    = @{ exe = 'agy'; pipe = $false       # -i only: -p prints nothing until the end
-              args = { param($p, $r) if ($r -eq 'developer') { @('-i', $p, '--dangerously-skip-permissions') } else { @('-i', $p) } } }
+  agy    = @{ exe = (Resolve-Exe 'agy' $env:AGENTFLOW_AGY); pipe = $true        # print mode; stream-json shows progress in the log
+              args = { param($p, $r) if ($r -eq 'developer') { @('-p', $p, '--dangerously-skip-permissions', '--output-format', 'stream-json') } else { @('-i', $p) } } }
+  devin  = @{ exe = (Resolve-Exe 'devin' $env:AGENTFLOW_DEVIN); pipe = $true
+              args = { param($p, $r) @('-p', $p, '--permission-mode', 'dangerous', '--respect-workspace-trust', 'false') } }
 }
 
 function Now { [DateTime]::UtcNow.ToString('s') + 'Z' }
 function Invoke-Gate([string]$cmd, [string]$id, [string[]]$more = @()) {   # tools/gate.py -> object; exit 2 = gate error
   $out = Join-Path $rtDir "$id.gate.json"
-  $msg = & python (Join-Path $root 'tools\gate.py') $cmd $id @more --out $out 2>&1
+  $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
+  $msg = & $py @pyArgs (Join-Path $flowRoot 'tools\gate.py') $cmd $id @more --out $out 2>&1
   if ($LASTEXITCODE -ge 2 -or -not (Test-Path $out)) { throw "gate.py $cmd ${id}: $msg" }
   try { Get-Content $out -Raw -Encoding utf8 | ConvertFrom-Json } finally { Remove-Item $out -ErrorAction SilentlyContinue }
 }
@@ -166,6 +188,15 @@ if ($MarkFinished) {
 # --- -Worker: runs inside the visible window
 if ($Worker) {
   [Console]::OutputEncoding = [Console]::InputEncoding = $OutputEncoding = [Text.UTF8Encoding]::new($false)   # tool output is UTF-8
+  try {   # a click in a console with QuickEdit pauses the worker until a key press: switch QuickEdit off for this window
+    Add-Type -Namespace AgentFlow -Name Console -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern System.IntPtr GetStdHandle(int h);
+[DllImport("kernel32.dll")] public static extern bool GetConsoleMode(System.IntPtr h, out uint m);
+[DllImport("kernel32.dll")] public static extern bool SetConsoleMode(System.IntPtr h, uint m);
+'@
+    $hIn = [AgentFlow.Console]::GetStdHandle(-10); $mode = 0
+    if ([AgentFlow.Console]::GetConsoleMode($hIn, [ref]$mode)) { [void][AgentFlow.Console]::SetConsoleMode($hIn, ($mode -band (-bnot 0x40)) -bor 0x80) }
+  } catch {}
   $ErrorActionPreference = 'Continue'   # native stderr must not abort the worker
   $spec = $Tools[$Tool]
   $rt = Read-Rt $TaskId; $log = (Get-Last $rt).log
@@ -192,7 +223,7 @@ if ($Worker) {
   Set-Location -LiteralPath $root   # leave the checkout so it can be removed
   $rt = Read-Rt $TaskId; $a = Get-Last $rt   # re-read: the launcher wrote the pid after start
   $a.exitCode = $code
-  $a.limitHit = (Test-Path $log) -and [bool](Get-Content $log -Tail 50 | Select-String -Pattern 'usage limit|rate limit|quota' -Quiet)
+  $a.limitHit = (Test-Path $log) -and [bool](Get-Content $log -Tail 50 | Select-String -Pattern 'usage limit|rate limit|quota|session limit|hit your limit' -Quiet)
   if ($note) { $a.note = $note }
   Complete-Attempt $TaskId $rt $(if ($code -eq 0) { 'exited' } else { 'error' })
   Write-Host "`n$TaskId attempt $($a.n): $($a.status) (exit $code)."
@@ -210,7 +241,7 @@ catch { throw "another run-task.ps1 launch is in progress ($lockPath). Wait and 
 try {
   $rt = Read-Rt $TaskId; $prev = Get-Last $rt
   if (Test-Held $prev) {
-    throw "$TaskId already has a running attempt ($($prev.tool), pid $($prev.pid)). One task = one worker. Stop it first: tools\run-task.ps1 $TaskId -Stop"
+    throw "$TaskId already has a running attempt ($($prev.tool), pid $($prev.pid)). One task = one worker. Stop it first: .agentflow\tools\run-task.ps1 $TaskId -Stop"
   }
   if ($prev -and $prev.status -eq 'running') {
     Write-Warning "previous attempt of $TaskId died without a final state (window closed?). Recovery applies."
@@ -238,9 +269,13 @@ try {
 
   if ($Manual) {
     $e = Get-WorkerEnv $t
-    Write-Host "$TaskId attempt $n ready for a manual start.`n  folder: $($t.workdir)`n  env:    $(@($e.Keys | ForEach-Object { "$_=$($e[$_])" }) -join ', ')`n  prompt: $($t.prompt)`nWhen it ends: tools\run-task.ps1 $TaskId -MarkFinished"
+    Write-Host "$TaskId attempt $n ready for a manual start.`n  folder: $($t.workdir)`n  env:    $(@($e.Keys | ForEach-Object { "$_=$($e[$_])" }) -join ', ')`n  prompt: $($t.prompt)`nWhen it ends: .agentflow\tools\run-task.ps1 $TaskId -MarkFinished"
     return
   }
+  $handover = [ordered]@{ PATH = $env:PATH }   # see .DESCRIPTION: the window may not inherit this environment
+  Get-ChildItem env: | Where-Object { $_.Name -like 'AGENTFLOW_*' -and $_.Name -notin 'AGENTFLOW_TARGET', 'AGENTFLOW_EVIDENCE' } |
+    ForEach-Object { $handover[$_.Name] = $_.Value }   # the task sets TARGET and EVIDENCE itself
+  [IO.File]::WriteAllText((Join-Path $rtDir "$TaskId.env.json"), ($handover | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
   $ps = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
   $p = Start-Process $ps -PassThru -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass',
     '-File', "`"$PSCommandPath`"", $TaskId, $Tool, '-Worker'

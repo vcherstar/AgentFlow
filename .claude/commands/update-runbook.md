@@ -1,3 +1,2 @@
-# /update-runbook
-
-Run `docs/ai-handoff-protocol.md`, section "Updating the runbook".
+Read `.agentflow/commands/update-runbook.md` and follow its instructions.
+Arguments: $ARGUMENTS

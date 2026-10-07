@@ -1,15 +1,26 @@
-# Agent Instructions
+# Agent instructions
 
-AgentFlow version: 2.1.0
+This repository is the AgentFlow template. Its product is `.agentflow/` plus the entry points and the guide.
 
-Read by Codex CLI, Antigravity, Antigravity CLI, and other AGENTS.md-aware tools. Claude Code reads it through `CLAUDE.md`.
+<!-- agentflow:begin -->
+## AgentFlow
 
-This project uses AI Project Memory with team roles. Source of truth: `docs/ai-handoff-protocol.md`. Read it first, then follow it. Rule order (what may add to or override what): protocol, Standing rules.
+AgentFlow version: 2.2.0. Workflow files live in `.agentflow/`; this block is template-owned and replaced on update.
 
-If you were given a role (`roles/<role>.md`, or `/start-role <role> ...`): run protocol section "Starting a role session" and follow your role file. Workers (developer, tester, deployer) do not update project memory.
+Source of truth: `.agentflow/docs/ai-handoff-protocol.md`. Read it first, then follow it. Project rules:
+`.agentflow/docs/project-rules.md` (and any rules in this file outside this block).
 
-Without a role (Single Mode): before substantial work run protocol section "Starting a new AI session"; before ending a long session run "Updating memory", and "Updating the runbook" if a verified human-facing step changed.
+- With a role (`.agentflow/roles/<role>.md`, or `/start-role <role> ...`): protocol section "Starting a role session".
+  Workers (developer, tester, deployer) do not update project memory.
+- Without a role (Single Mode): protocol section "Starting a new AI session" before substantial work; "Updating memory"
+  before ending a long session.
+<!-- agentflow:end -->
 
 ## Project rules
 
-Project-specific rules go below this heading or in `docs/engineering-rules.md` (protocol, Terms: Project rules): code and run rules, the `<worktrees>` folder, `## Preflight`, and `## Tool routing` notes for this project. A template update replaces only the part of this file above this heading.
+- This repository develops the template itself: template-owned files are its product (`.agentflow/README.md`).
+- A change to the protocol, a role, a tool or the dashboard gets a `CHANGELOG.md` entry, a version bump in
+  `.agentflow/VERSION` and a dated entry in `.agentflow/state/decisions.md`; its migration notes say what an
+  installed project must do.
+- Keep `.agentflow/tools/install.py` and these entry points in step: `.agentflow/tests/test_install.py` checks it.
+- Before a commit: `python -m unittest discover -s .agentflow/tests`.

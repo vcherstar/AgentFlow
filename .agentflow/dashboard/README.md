@@ -1,14 +1,18 @@
 # Dashboard
 
-A read-only view of the project for the human (Russian interface): task table and filters (`out/index.html`), Gantt, timeline and links (`out/graph.html`). It never changes the project; it reads `state/tasks.md` (Task Ledger), `tasks/T-*.md` (Task Files) and git history. Template-owned: see `docs/ai-handoff-protocol.md`, section "Dashboard".
+Local layout: `file` is the repository-relative Task File path;
+`fileHref` is the link relative to generated HTML in `out/`.
+Workflow storage lives in `.agentflow/`; Git history is read from the repository root.
+
+A read-only view of the project for the human (Russian interface): task table and filters (`out/index.html`), Gantt, timeline and links (`out/graph.html`). It never changes the project; it reads `.agentflow/state/tasks.md` (Task Ledger), `.agentflow/tasks/T-*.md` (Task Files) and git history. Template-owned: see `.agentflow/docs/ai-handoff-protocol.md`, section "Dashboard".
 
 ## Use
 
 ```
-python dashboard/build.py                          # build out/index.html and out/graph.html, open either in a browser
-python dashboard/snapshot.py save "what changed"   # keep the current dashboard sources as version vN
-python dashboard/snapshot.py list
-python dashboard/snapshot.py restore vN            # roll the sources back (the current state is saved first)
+python .agentflow/dashboard/build.py                          # build out/index.html and out/graph.html, open either in a browser
+python .agentflow/dashboard/snapshot.py save "what changed"   # keep the current dashboard sources as version vN
+python .agentflow/dashboard/snapshot.py list
+python .agentflow/dashboard/snapshot.py restore vN            # roll the sources back (the current state is saved first)
 ```
 
 Needs Python 3 and git. Run it after the Orchestrator updates the ledger, or whenever you want a fresh view. `out/` and `versions/` are local and git-ignored; everything else here is part of the template.
@@ -40,4 +44,4 @@ The pages compare against these exact strings; change both sides together. The s
 
 Three different questions, three different fields: ledger `status` (is it accepted), `result` (what the worker reported), `check` (what the independent review found). «Завершено исполнителем» is not «Принята».
 
-The page header shows the project name: the name of the folder that contains `dashboard/`.
+The page header shows the name of the repository folder containing `.agentflow/`.

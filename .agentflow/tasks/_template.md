@@ -1,11 +1,11 @@
 # T-NNN: <short title>
 
-<!-- Task File template. Only the Orchestrator copies and fills it: tasks/T-NNN-slug.md.
+<!-- Task File template. Only the Orchestrator copies and fills it: .agentflow/tasks/T-NNN-slug.md.
      Fields, states, gates: ../docs/ai-handoff-protocol.md. Task state lives in ../state/tasks.md. -->
 
 Role: developer | tester | deployer
-Tool: claude | codex | agy | antigravity      <!-- ../roles/tool-routing.md -->
-Stage: <Stage number from docs/project-plan.md>
+Tool: claude | codex | agy | devin | antigravity      <!-- ../roles/tool-routing.md -->
+Stage: <Stage number from .agentflow/docs/project-plan.md>
 Depends on: T-xxx | none
 Branch: t-NNN-slug                            <!-- developer -->
 Worktree: <worktrees>\<repo>-t-NNN-slug       <!-- developer; <worktrees> from Project rules -->
@@ -60,4 +60,4 @@ One or two sentences: what must be different.
 
 ## Result
 
-<!-- Filled by the worker. Format: its role file. -->
+<!-- Filled by the worker below this heading only. Format: its role file. Nothing above this heading may change, and the header never repeats this heading text. -->

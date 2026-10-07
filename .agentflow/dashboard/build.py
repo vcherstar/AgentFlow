@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
-"""Собирает dashboard/out/index.html и out/graph.html из state/tasks.md, tasks/T-*.md и истории git.
+"""Собирает .agentflow/dashboard/out/index.html и out/graph.html из .agentflow/state/tasks.md, .agentflow/tasks/T-*.md и истории git.
 
-Запуск из любого места: python dashboard/build.py
-Проект только читает; пишет только dashboard/out/ (в .gitignore). Какие поля отдаёт скрипт страницам: dashboard/README.md.
-Версии самого дашборда: dashboard/snapshot.py.
+Запуск из любого места: python .agentflow/dashboard/build.py
+Проект только читает; пишет только .agentflow/dashboard/out/ (в .gitignore). Какие поля отдаёт скрипт страницам: .agentflow/dashboard/README.md.
+Версии самого дашборда: .agentflow/dashboard/snapshot.py.
 """
-import json, re, subprocess, sys
+import json, os, re, subprocess, sys
 from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+sys.path.insert(0, str(HERE.parent / "tools"))
+from paths import FLOW_ROOT, REPO_ROOT
+
+ROOT = REPO_ROOT
 OUT = HERE / "out"
-LEDGER = ROOT / "state" / "tasks.md"
-TASKS = ROOT / "tasks"
+LEDGER = FLOW_ROOT / "state" / "tasks.md"
+TASKS = FLOW_ROOT / "tasks"
+LEDGER_REL = LEDGER.relative_to(ROOT).as_posix()
+TASKS_REL = TASKS.relative_to(ROOT).as_posix()
 PROJECT = ROOT.name
 
 STATUS_RU = {  # словарь реестра (ledger) -> метка
@@ -57,8 +62,8 @@ def section(text, name):
 
 
 def git_dates():
-    """файл -> (первый коммит, последний коммит) по tasks/*.md"""
-    out = subprocess.run(["git", "log", "--format=@%aI", "--name-only", "--", "tasks"],
+    """файл -> (первый коммит, последний коммит) по .agentflow/tasks/*.md"""
+    out = subprocess.run(["git", "log", "--format=@%aI", "--name-only", "--", TASKS_REL, "tasks"],
                          cwd=ROOT, capture_output=True, text=True, encoding="utf-8").stdout
     first, last, cur = {}, {}, None
     for line in out.splitlines():
@@ -66,6 +71,8 @@ def git_dates():
             cur = line[1:]
         elif line.strip() and cur:
             f = line.strip()
+            if f.startswith("tasks/"):
+                f = ".agentflow/" + f
             last.setdefault(f, cur)  # лог от нового к старому
             first[f] = cur
     return first, last
@@ -105,14 +112,15 @@ def ledger_rows(text):
 
 
 def history():
-    """Проигрывает историю git файла state/tasks.md: статусы и зависимости во времени."""
-    log = git("log", "--reverse", "--format=%H\t%aI\t%s", "--", "state/tasks.md").strip().splitlines()
+    """Проигрывает историю git файла .agentflow/state/tasks.md: статусы и зависимости во времени."""
+    log = git("log", "--reverse", "--format=%H\t%aI\t%s", "--", LEDGER_REL, "state/tasks.md").strip().splitlines()
     timeline, edges, open_edges, commits = {}, [], {}, []
     prev_status, prev_deps = {}, {}
     for l in log:
         h, ts, subj = l.split("\t", 2)
         commits.append([ts, subj])
-        cur = ledger_rows(git("show", f"{h}:state/tasks.md"))
+        text = git("show", f"{h}:{LEDGER_REL}") or git("show", f"{h}:state/tasks.md")
+        cur = ledger_rows(text)
         for tid, r in cur.items():
             st = norm_status(r.get("Status", ""))
             if prev_status.get(tid) != st:
@@ -205,7 +213,7 @@ def origins(tasks, goal_text):
 
 
 SKIP_RE = re.compile(r"package-lock\.json|\.lock$|\.lockb$|\.(png|jpe?g|gif|webp|svg|ico|mp4|webm|pdf|woff2?|zip)$", re.I)  # lock-файлы и бинарные ресурсы не считаем
-DOC_RE = re.compile(r"^(docs|tasks|state|runbook|screenshots)/|\.md$", re.I)
+DOC_RE = re.compile(r"^\.agentflow/|^(docs|tasks|state|runbook|screenshots)/|\.md$", re.I)
 
 
 def sizes():
@@ -285,7 +293,8 @@ def main():
         ind_raw = field(body, "Independent check").lower()
         ind = "tester" if ind_raw.startswith("tester") else "none" if ind_raw.startswith("none") else ""
         status = STATUS_RU.get(r["Status"].lower(), r["Status"])
-        rel = f"tasks/{p.name}" if p else ""
+        rel = p.relative_to(ROOT).as_posix() if p else ""
+        file_href = os.path.relpath(p, OUT).replace(os.sep, "/") if p else ""
         upd = r.get("Updated", "")
         created = first.get(rel, "")[:10]
         t = {
@@ -299,7 +308,7 @@ def main():
             "reportCommit": report_commit(res),
             "ind": ind, "verdict": field(res, "Verdict").lower().split()[0] if field(res, "Verdict") else "",
             "deps": parse_deps(r.get("Depends on", "")), "commit": r.get("Commit / artifact", ""),
-            "notes": r.get("Notes", ""), "file": rel,
+            "notes": r.get("Notes", ""), "file": rel, "fileHref": file_href,
             "created": created or (upd[:10] if upd else ""),
             "updated": upd[:10] or (last.get(rel, "")[:10]),
             "goal": short(section(body, "Goal"), 900),
