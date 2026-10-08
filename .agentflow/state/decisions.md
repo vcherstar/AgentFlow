@@ -168,3 +168,11 @@ In Watermark Remover, Devin (T-034) wrote its Result into the Task File copy ins
 attempt ended `exited`, and only acceptance would have found an empty Result and a branch past `Change`. The end check
 now reports both with the recovery steps, and the worker prompt names the exact file. Rejected: reading the Result from
 the worktree copy (two sources of truth; memory would merge through a product branch).
+
+## 2026-10-09: 2.10.0 - Per-tool parallel limit (project rule)
+
+In Watermark Remover two Codex testers ran at once on Windows; their sandboxes kept rewriting the logon of the shared
+sandbox account, Windows locked it and the user's own account (lockout policy, error 1909), and both testers lost
+their environment. Parallelism is a machine fact, so it is a project Preflight rule `- parallel: <tool>=<n>`, checked
+at every launch (also by tick.py and the conductor, which wait for a free slot). The default project rules ship
+`codex=1`. Rejected: a global AgentFlow constant (other machines and tools differ).

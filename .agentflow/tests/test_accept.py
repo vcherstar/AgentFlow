@@ -35,7 +35,9 @@ class AcceptTests(unittest.TestCase):
             return True  # the branch exists
 
         out = io.StringIO()
-        with patch.object(accept, "run", run), patch.object(accept.gate, "parse", return_value=dict(task)), \
+        # dirty() reads the real repository: a template checkout with edits in progress must not fail these tests
+        with patch.object(accept, "run", run), patch.object(accept, "dirty", return_value=[]), \
+                patch.object(accept.gate, "parse", return_value=dict(task)), \
                 patch.object(accept.gate, "main_branch", return_value="master"), \
                 patch.object(accept.gate, "git", side_effect=lambda *a, **k: "" if a[0] == "status" else SHA), \
                 patch.object(accept.gate, "git_ok", side_effect=git_ok), \

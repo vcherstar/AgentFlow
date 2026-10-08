@@ -2,6 +2,13 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.10.0 - 2026-10-09
+
+- New project Preflight rule `- parallel: <tool>=<n>`: `gate.py preflight --tool` (passed by `run-task.ps1`, so also by `tick.py` and the conductor) refuses a launch while n attempts of that tool are running. Found in a project: two Codex sessions at once on Windows rewrote each other's sandbox account logon, Windows locked the sandbox account and the user's own account (error 1909), and both testers lost their environment.
+- `test_parallel.py`; `test_accept.py` no longer depends on the template checkout being clean.
+
+Migration from 2.9.x: `install.py --update`; on Windows add `- parallel: codex=1` under `## Preflight` in `.agentflow/docs/project-rules.md`.
+
 ## 2.9.2 - 2026-10-09
 
 - The end check fails a developer attempt that wrote its Result into the Task File copy inside its worktree (the main Task File stays empty) or committed a Task File on its branch; the message says how to recover. The worker prompt and the developer role now say it explicitly. Found in a project: Devin wrote and committed its Result in the worktree copy; the attempt looked fine, acceptance saw an empty Result.

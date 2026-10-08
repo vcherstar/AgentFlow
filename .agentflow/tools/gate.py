@@ -6,7 +6,7 @@
 
 Used by .agentflow/tools/run-task.ps1 (pure logic here, side effects there):
   python .agentflow/tools/gate.py task T-007 --out f.json
-  python .agentflow/tools/gate.py preflight T-007 [--manual] [--live T-1,T-2] --out f.json
+  python .agentflow/tools/gate.py preflight T-007 [--manual] [--live T-1,T-2] [--tool codex] --out f.json
   python .agentflow/tools/gate.py endcheck T-007 --out f.json
 
 Rules: .agentflow/docs/ai-handoff-protocol.md. Exit code: 0 pass, 1 fail, 2 gate error.
@@ -294,7 +294,7 @@ def last_attempt(tid):
 
 
 # --- preflight: all problems at once, before anything is created (protocol: Launching workers, rule 9)
-def preflight(tid, manual, live):
+def preflight(tid, manual, live, tool=None):
     bad = []
     try:
         t = parse(tid)
@@ -372,27 +372,35 @@ def preflight(tid, manual, live):
         if oid in live and t["env"].get("PORT") and t["env"].get("PORT") == o["env"].get("PORT"):
             bad.append(f"PORT={t['env']['PORT']} is used by running {oid}")
 
-    # project rules: "## Preflight" in .agentflow/docs/engineering-rules.md and/or AGENTS.md, for commands that run against local
-    #   - deny: <regex>                  no Checks command or Setup line may match
-    #   - require: <regex> => <regex>    a Checks command matching the first must match the second
-    if t["target"] == "local":
-        text = Path(t["file"]).read_text(encoding="utf-8-sig")
-        run = t["checks"] + bullets(section(text, "Setup"))
-        for src in (FLOW_ROOT / "docs" / "engineering-rules.md",
-                    FLOW_ROOT / "docs" / "project-rules.md", ROOT / "AGENTS.md"):
-            if not src.exists():
-                continue
-            for r in bullets(section(src.read_text(encoding="utf-8-sig"), "Preflight")):
-                try:
-                    if m := re.match(r"^deny\s*:\s*`?(.+?)`?$", r):
+    # project rules: "## Preflight" in .agentflow/docs/engineering-rules.md and/or AGENTS.md
+    #   - deny: <regex>                  no Checks command or Setup line may match (local tasks)
+    #   - require: <regex> => <regex>    a Checks command matching the first must match the second (local tasks)
+    #   - parallel: <tool>=<n>           at most n running attempts of that tool on this machine (any task)
+    text = Path(t["file"]).read_text(encoding="utf-8-sig")
+    run = t["checks"] + bullets(section(text, "Setup"))
+    for src in (FLOW_ROOT / "docs" / "engineering-rules.md",
+                FLOW_ROOT / "docs" / "project-rules.md", ROOT / "AGENTS.md"):
+        if not src.exists():
+            continue
+        for r in bullets(section(src.read_text(encoding="utf-8-sig"), "Preflight")):
+            try:
+                if m := re.match(r"^parallel\s*:\s*`?([a-z]+)\s*=\s*(\d+)`?$", r):
+                    if tool == m.group(1):
+                        busy = sorted(o for o in live if o != tid and ((last_attempt(o) or {}).get("tool") == tool))
+                        if len(busy) >= int(m.group(2)):
+                            bad.append(f"{tool} allows {m.group(2)} running session(s) on this machine (project rule); "
+                                       f"running: {', '.join(busy)}")
+                elif m := re.match(r"^deny\s*:\s*`?(.+?)`?$", r):
+                    if t["target"] == "local":
                         bad += [f"'{c}' matches project deny rule '{m.group(1)}'" for c in run if re.search(m.group(1), c)]
-                    elif m := re.match(r"^require\s*:\s*`?(.+?)`?\s*=>\s*`?(.+?)`?$", r):
+                elif m := re.match(r"^require\s*:\s*`?(.+?)`?\s*=>\s*`?(.+?)`?$", r):
+                    if t["target"] == "local":
                         bad += [f"'{c}' must match '{m.group(2)}' (project rule for '{m.group(1)}')"
                                 for c in t["checks"] if re.search(m.group(1), c) and not re.search(m.group(2), c)]
-                    else:
-                        bad.append(f"project Preflight: unknown rule '{r}'")
-                except re.error as e:
-                    bad.append(f"project Preflight: bad rule '{r}': {e}")
+                else:
+                    bad.append(f"project Preflight: unknown rule '{r}'")
+            except re.error as e:
+                bad.append(f"project Preflight: bad rule '{r}': {e}")
     return t, bad
 
 
@@ -614,6 +622,7 @@ def main():
         if name == "preflight":
             p.add_argument("--manual", action="store_true")
             p.add_argument("--live", default="")
+            p.add_argument("--tool", help="the tool about to be launched (project rule parallel)")
     sub.add_parser("stage").add_argument("n")
     a = ap.parse_args()
     try:
@@ -622,7 +631,7 @@ def main():
             t["baseline"] = baseline(t)
             write(a.out, t)
         elif a.cmd == "preflight":
-            t, bad = preflight(a.id, a.manual, {x for x in a.live.split(",") if x})
+            t, bad = preflight(a.id, a.manual, {x for x in a.live.split(",") if x}, a.tool)
             write(a.out, {"ok": not bad, "problems": bad, "task": t})
             return 0 if not bad else 1
         elif a.cmd == "endcheck":
