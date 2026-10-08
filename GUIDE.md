@@ -207,6 +207,21 @@ VS Code → открыть папку проекта → новая сессия
 - оркестратор — решение по архитектуре, данным, деньгам; отзыв о пробной сборке;
 - деплоер — «да» на прод (в его сессии).
 
+### Если у оркестратора кончился лимит
+
+Оркестратор отмечается после каждого шага (`tick.py heartbeat`). Отметка старше 20 минут = оркестратора нет. Тогда:
+
+1. Посмотреть, что делать: `python .agentflow\tools\tick.py run --dry-run` — что можно сделать без суждения (принять задачу тестера с `pass`, запустить готовые) и что требует оркестратора.
+2. Механический шаг: `python .agentflow\tools\tick.py run` — принимает и запускает через `accept.py` и `run-task.ps1`, со всеми проверками. Его можно повторять сколько угодно.
+3. Суждение нужно (провал теста, `blocked`, кончился лимит у исполнителя) — открой сессию оркестратора на первом свободном инструменте (`python .agentflow\tools\tick.py next-orchestrator`; порядок `AGENTFLOW_ORCHESTRATORS`, по умолчанию claude, codex, devin, agy) с промптом:
+
+   ```text
+   You are the Orchestrator in background mode, holder name '<tool>-background'. Your role: .agentflow/roles/orchestrator.md. First read .agentflow/docs/ai-handoff-protocol.md, section 'Autonomous orchestration': its limits override everything else.
+   ```
+
+   Такая сессия работает только в рамках утверждённого плана: без новых задач вне цели, без push, публикации и прода. Вопросы к тебе она пишет в `.agentflow/state/questions.md`.
+4. Вернулся: `python .agentflow\tools\tick.py status`, `.agentflow\state\questions.md`, `handoff.md`.
+
 ## Шаг 4. Выкладка на сервер
 
 Выкладку делает деплоер — та сессия, которую ты назвал на шаге 1. Оркестратор готовит задачу (`-Manual`) и даёт строку запуска, ты запускаешь её в этой сессии. Для прода деплоер сам спросит твоё «да», показав commit и окружение. Без него на прод не пойдёт. Когда закончит — `.agentflow\tools\run-task.ps1 T-NNN -MarkFinished`.
@@ -261,6 +276,8 @@ VS Code → открыть папку проекта → новая сессия
 | Остановить зависшего исполнителя | `.agentflow\tools\run-task.ps1 T-NNN -Stop` |
 | Запустить задачу вручную | `.agentflow\tools\run-task.ps1 T-NNN <codex\|claude\|agy\|devin>` |
 | Принять задачу | `python .agentflow\tools\accept.py T-NNN` (сначала `--dry-run`) |
+| Механический шаг без оркестратора | `python .agentflow\tools\tick.py run` (сначала `--dry-run`) |
+| Кто оркестрирует, какие лимиты | `python .agentflow\tools\tick.py status` |
 | Таблица задач | `python .agentflow\tools\ledger.py show` |
 | Дашборд (обзор, Гант) | `python .agentflow\dashboard\build.py`, затем `.agentflow\dashboard\out\index.html` |
 | Проверить сам AgentFlow | `python -m unittest discover -s .agentflow\tests` |

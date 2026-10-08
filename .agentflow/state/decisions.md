@@ -121,3 +121,13 @@ one broad question, one 0.5 threshold, `jev-latest`, a proxy's variable name). R
 rules and links in the template-owned `docs/typesafe.md` so every project and session follows them. Rejected: keeping
 the single broad question (the docs ask for decomposition into atomic questions combined in code).
 
+
+## 2026-10-08: 2.6.0 - Orchestration survives the Orchestrator session (human)
+
+Claude Code sessions often end on a usage limit while every other tool still has capacity, and the whole project
+stops. The human chose: a background Orchestrator acts only within the approved plan; notifications through Windows;
+fallback order Codex, Devin, Antigravity. Built `tick.py` (mechanical steps without a language model, one-holder
+heartbeat, remembered tool limits, next free orchestrator tool) and the protocol section with the limits of a
+background session and `questions.md`. Rejected: a background session that may extend scope or decide for the human;
+two Orchestrators acting at once. Not in this version: a watcher that starts background sessions by itself (needs the
+human's explicit permission on the machine; Claude Code's safety classifier refused to write it unasked).

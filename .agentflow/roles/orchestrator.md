@@ -41,5 +41,5 @@ You are the most expensive session: decide, do not grind.
 - Do not read large files, logs, or diffs whole: read `## Result`, the verify output, the log tail.
 - Ledger only through `.agentflow/tools/ledger.py`; launches, worktrees, process state only through `.agentflow/tools/run-task.ps1`; no one-off scripts.
 - Preflight already checked overlaps, dependencies, ports, and project bans: do not check them again.
-- Claude limit running out: Codex can take the role, passed through `.agentflow/state/handoff.md`.
+- Heartbeat after every step and mechanical steps through `python .agentflow/tools/tick.py` ([Autonomous orchestration](../docs/ai-handoff-protocol.md#section-autonomous-orchestration)). Your limit running out: update `.agentflow/state/handoff.md`, `tick.py limit <tool> "<message>"`, `tick.py release`; a background Orchestrator on the next free tool continues the approved plan.
 - Rules and launch notes go to project files (`.agentflow/state/decisions.md`, Project rules), never only to a tool's private memory.
