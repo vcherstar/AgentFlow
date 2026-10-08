@@ -161,3 +161,10 @@ In Watermark Remover, Devin finished T-033 with a correct Result, but the attemp
 `## Result` heading and Devin appended it after an empty line, which changed the hashed header by one trailing newline.
 Fixed in the hash (trailing whitespace is not content) and added `-Recheck` so such an attempt is not redone. Rejected:
 editing the runtime state by hand (only the launcher writes it); a new attempt (an hour of work repeated for a formality).
+
+## 2026-10-09: 2.9.2 - Result in the worktree copy is an end-check failure
+
+In Watermark Remover, Devin (T-034) wrote its Result into the Task File copy inside its worktree and committed it; the
+attempt ended `exited`, and only acceptance would have found an empty Result and a branch past `Change`. The end check
+now reports both with the recovery steps, and the worker prompt names the exact file. Rejected: reading the Result from
+the worktree copy (two sources of truth; memory would merge through a product branch).
