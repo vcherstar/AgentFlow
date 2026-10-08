@@ -2,6 +2,12 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.4.1 - 2026-10-08
+
+- route.py prints and logs the TypeSafe usage (input and output tokens) and the request id (`x-typesafe-request-id`) of every call, so a call can be matched with the TypeSafe dashboard or support.
+
+Migration from 2.4.0: `install.py --update`.
+
 ## 2.4.0 - 2026-10-08
 
 - Task File line `Model: <model>[, effort=<level>]`: the launcher adds the tool's flags (codex `-m` and `-c model_reasoning_effort`, agy `--model` / `--effort`, claude and devin `--model`). New machine variables `AGENTFLOW_CLAUDE_ARGS`, `AGENTFLOW_AGY_ARGS`, `AGENTFLOW_DEVIN_ARGS`.

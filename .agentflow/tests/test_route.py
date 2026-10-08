@@ -23,8 +23,10 @@ class Fake(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         Fake.seen.append({"auth": self.headers.get("Authorization"), "body": body})
-        data = json.dumps({"model": "jev-test", "answers": {"option": Fake.answer}}).encode()
+        data = json.dumps({"model": "jev-test", "answers": {"option": Fake.answer},
+                           "usage": {"input_tokens": 300, "output_tokens": 30}}).encode()
         self.send_response(200)
+        self.send_header("x-typesafe-request-id", "req_test")
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -124,7 +126,9 @@ class RouteTests(unittest.TestCase):
         self.assertIn("Tool: codex\nModel: gpt-6.1-sol, effort=xhigh\n", text)
         ledger = (self.root / ".agentflow" / "state" / "tasks.md").read_text(encoding="utf-8")
         self.assertIn("| codex |", ledger)
-        self.assertTrue((self.root / ".agentflow" / "tasks" / ".runtime" / "T-001.route.json").exists())
+        self.assertIn("300 in / 30 out tokens, request req_test", r.stdout)
+        log = json.loads((self.root / ".agentflow" / "tasks" / ".runtime" / "T-001.route.json").read_text(encoding="utf-8"))
+        self.assertEqual((log[-1]["usage"], log[-1]["requestId"]), ({"input_tokens": 300, "output_tokens": 30}, "req_test"))
 
     def test_low_confidence_changes_nothing(self):
         Fake.answer = {"choice": "claude", "confidence": 0.3, "probabilities": {"claude": 0.6, "codex-max": 0.4}}

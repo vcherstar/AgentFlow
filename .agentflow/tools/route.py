@@ -97,7 +97,10 @@ def ask(state, options, key, opener=urllib.request.urlopen, tries=3):
                                      headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
         try:
             with opener(req, timeout=30) as r:
-                return json.loads(r.read())["answers"]["option"]
+                d = json.loads(r.read())
+                meta = {"model": d.get("model"), "usage": d.get("usage"),
+                        "requestId": r.headers.get("x-typesafe-request-id")}
+                return d["answers"]["option"], meta
         except urllib.error.HTTPError as e:
             if e.code in (429, 529) and i + 1 < tries:
                 time.sleep(2 * (i + 1))
@@ -132,16 +135,20 @@ def route(tid, apply=False, threshold=0.5, opener=urllib.request.urlopen, today=
     opts = available(cfg.get("options", {}), t["role"], avoid, today)
     if not opts:
         raise NoDecision(f"no option is available today for a {t['role']} task")
-    answer = ask(task_state(t, text, cfg.get("policy", "")), opts, api_key(), opener)
+    answer, meta = ask(task_state(t, text, cfg.get("policy", "")), opts, api_key(), opener)
     pick, conf = answer.get("choice"), float(answer.get("confidence", 0))
     probs = sorted(answer.get("probabilities", {}).items(), key=lambda kv: -kv[1])
     o = opts.get(pick, {})
-    rec = {"task": tid, "at": date.today().isoformat(), "choice": pick, "confidence": conf, "probabilities": dict(probs),
+    rec = {"task": tid, "at": date.today().isoformat(), **meta,
+           "choice": pick, "confidence": conf, "probabilities": dict(probs),
            "tool": o.get("tool"), "model": o.get("model"), "effort": o.get("effort"), "applied": False}
     print(f"{tid}: {pick} (confidence {conf:.2f}) -> Tool: {o.get('tool')}"
           + (f", Model: {o['model']}" + (f", effort={o['effort']}" if o.get("effort") else "") if o.get("model") else ""))
     for k, v in probs[:5]:
         print(f"  {v:.2f}  {k}")
+    u = meta.get("usage") or {}
+    print(f"  TypeSafe {meta.get('model')}: {u.get('input_tokens', '?')} in / {u.get('output_tokens', '?')} out tokens,"
+          f" request {meta.get('requestId') or '-'}")
     if conf < threshold:
         print(f"  confidence below {threshold}: decide by tool-routing.md")
         _log(tid, rec)
