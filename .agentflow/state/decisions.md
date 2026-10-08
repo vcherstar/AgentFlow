@@ -129,5 +129,12 @@ stops. The human chose: a background Orchestrator acts only within the approved 
 fallback order Codex, Devin, Antigravity. Built `tick.py` (mechanical steps without a language model, one-holder
 heartbeat, remembered tool limits, next free orchestrator tool) and the protocol section with the limits of a
 background session and `questions.md`. Rejected: a background session that may extend scope or decide for the human;
-two Orchestrators acting at once. Not in this version: a watcher that starts background sessions by itself (needs the
-human's explicit permission on the machine; Claude Code's safety classifier refused to write it unasked).
+two Orchestrators acting at once.
+
+## 2026-10-08: 2.7.0 - The conductor starts background Orchestrator sessions (human)
+
+The human explicitly allowed a watcher that starts background Orchestrator sessions with full access by itself
+(Claude Code's safety classifier had refused to write it without that permission). `conductor.ps1` is started and
+closed by the human, uses the developer command lines of `run-task.ps1`, and stays inside the 2.6.0 limits: one holder
+at a time, the approved plan only, questions to `questions.md`. Rejected: a hidden background process (the window is
+how the human sees and stops it); retrying the same needs every round (cooldown, except after a usage limit).

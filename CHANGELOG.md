@@ -2,6 +2,13 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.7.0 - 2026-10-08
+
+- New `.agentflow/tools/conductor.ps1`, the watcher the human leaves open: every 3 minutes `tick.py run`; when there are needs and no Orchestrator is live, a background Orchestrator session in a visible window on the first free tool of `AGENTFLOW_ORCHESTRATORS`, with the developer command line of `run-task.ps1` (full access) and `AGENTFLOW_ORCHESTRATOR_<TOOL>_ARGS`. A session that hits a usage limit records it and the next round hands over to the next tool at once; the same needs are otherwise handed over again only after `-CooldownMinutes` (60). Windows notifications for acceptances and launches, hand-overs, finished sessions, all tools limited, and changes in `questions.md`. `-Once -DryRun` shows what it would do.
+- `test_conductor.py` runs it in real PowerShell with a fake `tick.py` and fake tools: dry run, a live Orchestrator left alone, hand-over, the next tool after a limit, cooldown, all tools limited.
+
+Migration from 2.6.0: `install.py --update`; in Claude Code add an allow rule for `.agentflow/tools/conductor.ps1` if Claude should start it.
+
 ## 2.6.0 - 2026-10-08
 
 Orchestration survives the end of an Orchestrator session (usage limit, closed window):
