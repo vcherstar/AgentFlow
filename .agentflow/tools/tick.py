@@ -190,6 +190,9 @@ def decide(rows, at=None):
     done = {k for k, r in rows.items() if r.get("Status") == "done"}
     for tid, r in rows.items():
         st = r.get("Status")
+        if st == "blocked" and (r.get("Notes") or "").startswith("awaiting approval"):
+            out.append((tid, "wait", "awaiting the human's approval of the plan (ledger.py approve)"))
+            continue
         if st in ("done", "rejected", "cancelled", "blocked"):
             continue
         try:

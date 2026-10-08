@@ -2,6 +2,13 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.9.0 - 2026-10-08
+
+- A planned task waits for the human's approval. `ledger.py add` without `--status` creates it `blocked` with Notes `awaiting approval`; `gate.py preflight` refuses to launch it and `tick.py` lists it as waiting for approval; `ledger.py approve T-NNN ...` makes it `ready`. Successors and Tester tasks within an approved goal are added with `--status ready`. A background Orchestrator never approves. Found in a project: with the conductor running, a task added as `ready` before the human's yes would have been launched within minutes.
+- `test_approval.py`.
+
+Migration from 2.8.0: `install.py --update`. Tasks already in the ledger keep their status.
+
 ## 2.8.0 - 2026-10-08
 
 - The conductor runs once per project: a named mutex makes a second instance (the logon task, another window) exit at once. It records its pid and the time of its last round in `conductor.json`.

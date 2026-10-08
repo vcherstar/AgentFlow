@@ -146,3 +146,11 @@ human chose autostart at logon through Task Scheduler with a guard against a sec
 Orchestrator role, and a visible reminder: a desktop shortcut to a panel that shows and controls it. Rejected: a
 Claude Code session-start hook (starts a conductor per session, depends on Claude); a hidden background service (the
 human would forget it exists).
+
+## 2026-10-08: 2.9.0 - Planned tasks wait for the human's approval (human)
+
+In Watermark Remover the Orchestrator added two planned tasks as `ready` while the conductor ran; the conductor launches
+every `ready` task whose tool is free, so they would have started before the human approved the plan. The human asked
+to fix it in the template as a priority. Approval is now state, not memory: `ledger.py add` defaults to `blocked` with
+`awaiting approval`, preflight refuses such a task, `ledger.py approve` releases it. Rejected: a separate status (every
+tool and the dashboard know the current ones); relying on the heartbeat alone (it goes stale while the human thinks).

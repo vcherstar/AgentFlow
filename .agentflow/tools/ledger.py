@@ -2,7 +2,9 @@
 """Edit the Task Ledger (.agentflow/state/tasks.md) without one-off scripts.
 
   python .agentflow/tools/ledger.py add T-007 --title "Fix login" --stage 2 --role developer \
-      --tool codex --status ready --depends "T-006" --notes "..."
+      --tool codex --depends "T-006" --notes "..."      # a planned task: blocked, "awaiting approval"
+  python .agentflow/tools/ledger.py approve T-007 T-008                   # the human approved the plan: ready
+  python .agentflow/tools/ledger.py add T-009 ... --status ready          # needs no approval (successor, tester task)
   python .agentflow/tools/ledger.py set T-007 --status review
   python .agentflow/tools/ledger.py set T-007 --status done --commit abc1234      # acceptance: needs a passing gate.py verify on that SHA
   python .agentflow/tools/ledger.py set T-007 --status rejected --notes "-> T-012: <why>"
@@ -32,6 +34,7 @@ NEXT = {  # allowed status transitions; done, rejected, cancelled are final
     "done": set(), "rejected": set(), "cancelled": set(),
 }
 NEEDS_NOTES = {"rejected", "cancelled"}
+AWAITING = "awaiting approval"  # Notes prefix of a planned task the human has not approved: nothing launches it
 PLACEHOLDER = re.compile(r"^\s*No tasks yet\.?\s*$", re.I)
 HEAD = "# Task Ledger\n\nWritten only through `python .agentflow/tools/ledger.py`. Statuses: .agentflow/docs/ai-handoff-protocol.md, \"Task lifecycle\".\n\n"
 
@@ -100,6 +103,8 @@ def main() -> None:
         p.add_argument("id")
         for opt in FIELD:
             p.add_argument(f"--{opt}")
+    apv = sub.add_parser("approve", help="the human approved these planned tasks: blocked -> ready")
+    apv.add_argument("ids", nargs="+")
     sh = sub.add_parser("show")
     sh.add_argument("id", nargs="?")
     a = ap.parse_args()
@@ -114,6 +119,20 @@ def main() -> None:
                 print(" | ".join(r))
         return
 
+    if a.cmd == "approve":
+        st, nt = cols.index("Status"), cols.index("Notes")
+        bad = [t for t in a.ids if t not in idx or rows[idx[t]][st] != "blocked" or not rows[idx[t]][nt].startswith(AWAITING)]
+        if bad:
+            sys.exit(f"not awaiting approval: {', '.join(bad)} (only planned tasks added without --status are)")
+        for t in a.ids:
+            r = rows[idx[t]]
+            r[st], r[nt] = "ready", r[nt][len(AWAITING):].lstrip(" ;")
+            r[cols.index("Updated")] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        save(path, lines, head, end, rows)
+        for t in a.ids:
+            print(join_row(rows[idx[t]]))
+        return
+
     if not re.fullmatch(r"T-\d+", a.id):
         sys.exit(f"bad task id: {a.id} (expected T-NNN)")
     if a.status and a.status not in NEXT:
@@ -126,6 +145,9 @@ def main() -> None:
             sys.exit("a new task starts as ready or blocked")
         row = [""] * len(cols)
         row[0], row[cols.index("Status")] = a.id, "ready"
+        if a.status is None:  # a planned task waits for the human's approval (protocol: Task lifecycle, Flow)
+            a.status = "blocked"
+            a.notes = AWAITING + (f"; {a.notes}" if a.notes else "")
         rows.append(row)
         i = len(rows) - 1
     else:
