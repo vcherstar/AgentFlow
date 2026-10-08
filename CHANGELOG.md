@@ -2,6 +2,12 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.5.2 - 2026-10-08
+
+- Fix: tester tasks in a single-repository project could not launch since 2.3.0. The task JSON for `run-task.ps1` carried the single repository commit under an empty key, which PowerShell `ConvertFrom-Json` rejects; `gate.py` now writes that key as `.`. A new test reads a tester task JSON with real PowerShell.
+
+Migration from 2.5.x: `install.py --update`.
+
 ## 2.5.1 - 2026-10-08
 
 - Fix: a task `Model:` line now replaces the matching flags from `AGENTFLOW_<TOOL>_ARGS` instead of adding a second copy. Devin exited at start ("--model cannot be used multiple times") when both were set, and for Codex a machine `-c model_reasoning_effort` silently overrode the task effort.

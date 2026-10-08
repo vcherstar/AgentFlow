@@ -561,8 +561,18 @@ def stage(n):
     return not bad
 
 
+def portable(obj):
+    """JSON for run-task.ps1: PowerShell's ConvertFrom-Json rejects an empty property name, and the single repository's
+    key is "" - write it as "." (a JSON reader in Python sees the same data either way)."""
+    if isinstance(obj, dict):
+        return {(k if k != "" else "."): portable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [portable(v) for v in obj]
+    return obj
+
+
 def write(out, obj):
-    data = json.dumps(obj, indent=2)
+    data = json.dumps(portable(obj), indent=2)
     if out:
         Path(out).write_text(data, encoding="utf-8")
     else:

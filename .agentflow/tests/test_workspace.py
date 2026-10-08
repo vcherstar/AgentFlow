@@ -146,6 +146,30 @@ class SingleRepositoryTests(Base):
         self.assertIn(sha, (root / ".agentflow" / "state" / "tasks.md").read_text(encoding="utf-8"))
 
 
+    def test_tester_task_json_reads_in_powershell(self):
+        """Regression: the single repository's commit key "" broke ConvertFrom-Json in run-task.ps1 for testers."""
+        root = self.base / "project"
+        new_repo(root)
+        self.install_tools(root)
+        wt = self.base / "wt" / "project-t-001-probe"
+        (root / ".agentflow" / "tasks" / "T-001-probe.md").write_text(task_text("", "- `src/`", wt), encoding="utf-8")
+        self.start_attempt(root)
+        sha = self.commit_in(wt, "src/probe.txt")
+        (root / ".agentflow" / "tasks" / "T-002-test.md").write_text(
+            f"# T-002: Test\n\nRole: tester\nTool: codex\nStage: 1\nDepends on: none\nVerifies: T-001 @ {sha}\n"
+            "Resume: none\n\n## Result\n", encoding="utf-8")
+        out = root / ".agentflow" / "t2.json"
+        self.tool(root, "gate.py", "task", "T-002", "--out", out)
+        data = json.loads(out.read_text(encoding="utf-8"), object_pairs_hook=lambda pairs: (
+            self.assertNotIn("", [k for k, _ in pairs]) or dict(pairs)))
+        self.assertEqual(data["sha"], sha)
+        pwsh = shutil.which("pwsh")
+        if pwsh:
+            r = sh(root, pwsh, "-NoProfile", "-Command", f"(Get-Content '{out}' -Raw | ConvertFrom-Json).sha", check=False)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(r.stdout.strip(), sha)
+
+
 class WorkspaceTests(Base):
     def make_workspace(self, allowed="- `api/src/`\n- `web/src/`"):
         ws = self.base / "workspace"
