@@ -161,7 +161,7 @@ Beyond verify the Orchestrator does not investigate: a new measurement is a Test
 An `exited` attempt says nothing about the task: only the Result and the ledger do.
 
 1. `.agentflow/tasks/.runtime/T-NNN.json` is written only by `.agentflow/tools/run-task.ps1`: one entry per attempt (tool and arguments, times, exit code, `limitHit`, target, folder, baseline), appended, never overwritten; log `T-NNN.<n>.log`. Not committed.
-2. At the end of every attempt the launcher runs `gate.py endcheck`: the Task File above `## Result` unchanged and, for a Tester, review isolation held. A violation makes the attempt `error`.
+2. At the end of every attempt the launcher runs `gate.py endcheck`: the Task File above `## Result` unchanged (trailing blank lines do not count) and, for a Tester, review isolation held. A violation makes the attempt `error`. When the tool exited 0 and the violation was the check's own mistake, fixed since (an AgentFlow update), `run-task.ps1 T-NNN -Recheck` runs the same check again; passing makes the attempt `exited`.
 3. The human is not a dispatcher: the Orchestrator polls `.agentflow/tools/run-task.ps1 -Status` slowly (every 2-3 minutes). Attempt ended (`exited`, `error`, `dead`): read the Result and decide. Result filled while an interactive tool is still `running`: read it, decide, then `-Stop`.
 4. One task = one live worker. A `running` attempt is the task's lock; `.agentflow/tasks/.runtime/launch.lock` serializes launches from preflight until the attempt is recorded. Re-issue, Resume, and fallback happen only after the lock is released (the process ended, or `-Stop` on a hung worker). A worker is never declared dead by guess.
 

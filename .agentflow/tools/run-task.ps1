@@ -8,6 +8,7 @@
   .agentflow\tools\run-task.ps1 -Status              # process state of the last attempt of every task
   .agentflow\tools\run-task.ps1 T-007 -Stop          # kill a hung worker (whole process tree), release the lock
   .agentflow\tools\run-task.ps1 T-007 -MarkFinished  # a manual attempt has finished
+  .agentflow\tools\run-task.ps1 T-007 -Recheck       # run the end check again for an attempt that exited 0 but failed it
 
 .DESCRIPTION
   Rules: .agentflow/docs/ai-handoff-protocol.md, sections "Runtime state" and "Launching workers".
@@ -32,6 +33,7 @@ param(
   [switch]$Status,
   [switch]$Stop,
   [switch]$MarkFinished,
+  [switch]$Recheck,
   [switch]$Manual,
   [switch]$Worker
 )
@@ -231,6 +233,20 @@ if ($MarkFinished) {
   if (-not $a -or -not $a.manual -or $a.status -ne 'running') { throw "$TaskId has no running manual attempt (start one with -Manual)" }
   Complete-Attempt $TaskId $rt 'exited'
   Write-Host "$TaskId manual attempt $($a.n): $($a.status)"; return
+}
+
+# --- -Recheck: the end check failed an attempt whose tool exited 0. After the cause is fixed (for example an
+# AgentFlow update), run the same check again; passing makes the attempt 'exited', with the old note kept.
+if ($Recheck) {
+  $rt = Read-Rt $TaskId; $a = Get-Last $rt
+  if (-not $a -or $a.status -ne 'error' -or $a.exitCode -ne 0 -or $a.limitHit -or $a.manual) {
+    throw "${TaskId}: -Recheck needs a last attempt in 'error' whose tool exited 0 without a usage limit"
+  }
+  $bad = @((Invoke-Gate endcheck $TaskId).violations)
+  if ($bad.Count) { Write-Host "$TaskId attempt $($a.n) still fails the end check: $($bad -join '; ')"; exit 1 }
+  $a.status = 'exited'; $a.note = "$($a.note); recheck passed $(Now)"
+  Write-Rt $TaskId $rt
+  Write-Host "$TaskId attempt $($a.n): exited (end check passed on recheck)"; return
 }
 
 # --- -Worker: runs inside the visible window

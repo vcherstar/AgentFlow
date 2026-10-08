@@ -2,6 +2,14 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.9.1 - 2026-10-09
+
+- Fix: the end check failed a worker that appended the missing `## Result` heading after an empty line: the header hash counted the extra trailing blank line. `gate.py header()` now ignores trailing whitespace; hashes of existing baselines stay valid.
+- New `run-task.ps1 T-NNN -Recheck`: runs the end check again for an attempt that exited 0 but failed it, and marks it `exited` when it now passes (the old note is kept).
+- `test_endcheck.py`.
+
+Migration from 2.9.0: `install.py --update`; an attempt failed only by this, `run-task.ps1 T-NNN -Recheck`.
+
 ## 2.9.0 - 2026-10-08
 
 - A planned task waits for the human's approval. `ledger.py add` without `--status` creates it `blocked` with Notes `awaiting approval`; `gate.py preflight` refuses to launch it and `tick.py` lists it as waiting for approval; `ledger.py approve T-NNN ...` makes it `ready`. Successors and Tester tasks within an approved goal are added with `--status ready`. A background Orchestrator never approves. Found in a project: with the conductor running, a task added as `ready` before the human's yes would have been launched within minutes.
