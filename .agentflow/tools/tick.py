@@ -307,7 +307,7 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
         rows = gate.ledger_rows()
         if not dry:
             learn_limits(rows)
-        acted, failed = [], []
+        acted, failed, busy = [], [], []
         if not report_only:
             for _ in range(len(rows) + 1):  # accept until nothing changes: a tester accepted can unlock its developer
                 todo = [(t, d) for t, a, d in decide(rows) if a == "accept" and t not in {f["task"] for f in failed}]
@@ -320,6 +320,9 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
             for tid, a, tool in decide(rows):
                 if a == "launch":
                     ok, msg = launch(tid, tool)
+                    if not ok and "running session(s) on this machine" in msg:  # project rule parallel: wait for a slot
+                        busy.append({"task": tid, "detail": f"{tool} has no free slot (project rule parallel)"})
+                        continue
                     (acted if ok else failed).append({"task": tid, "action": "launch", "detail": msg if ok else f"launch refused: {msg}"})
             rows = gate.ledger_rows()
         plan = decide(rows)
@@ -327,7 +330,7 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
         needs = failed + [{"task": t, "action": "need", "detail": d} for t, a, d in plan if a == "need" and t not in failed_ids]
         report = {"at": iso(now()), "reportOnly": report_only, "live": live, "acted": acted,
                   "would": [{"task": t, "action": a, "detail": d} for t, a, d in plan if a in ("accept", "launch")] if report_only else [],
-                  "needs": needs, "waits": [{"task": t, "detail": d} for t, a, d in plan if a == "wait"],
+                  "needs": needs, "waits": busy + [{"task": t, "detail": d} for t, a, d in plan if a == "wait"],
                   "nextOrchestrator": next_orchestrator(),
                   "limited": {k: v["until"] for k, v in read(LIMITS, {}).items() if k != "_seen" and limited(k)}}
         if not dry:

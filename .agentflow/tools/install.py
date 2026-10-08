@@ -60,7 +60,7 @@ STUBS = {
         "- Main branch: <main | master>.\n"
         "- `<worktrees>` = <one folder outside the repository and outside cloud sync>.\n"
         "- Talk to the human in <language>.\n\n"
-        "## Preflight\n\n- deny: `\\bgit\\s+push\\b`\n\n"
+        "## Preflight\n\n- deny: `\\bgit\\s+push\\b`\n- parallel: codex=1\n\n"
         "## Tool routing\n\n<installed tools, their paths and limits on this machine>\n"),
     "docs/model-options.json": (
         '{\n  "policy": "<how to choose: what is free or has unused capacity, what is limited, testers on another tool>",\n'

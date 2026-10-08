@@ -318,7 +318,7 @@ try {
   }
   $live = @(Get-ChildItem $rtDir -Filter 'T-*.json' | Where-Object { $_.Name -match '^T-\d+\.json$' } | ForEach-Object {
     $o = Get-Content $_.FullName -Raw | ConvertFrom-Json; if (Test-Held (Get-Last $o)) { $o.taskId } })
-  $pf = Invoke-Gate preflight $TaskId (@('--live', ($live -join ',')) + $(if ($Manual) { @('--manual') } else { @() }))
+  $pf = Invoke-Gate preflight $TaskId (@('--live', ($live -join ',')) + $(if ($Manual) { @('--manual') } else { @('--tool', $Tool) }))
   if (-not $pf.ok) {
     throw "$TaskId preflight failed, nothing was created:`n  - $($pf.problems -join "`n  - ")`nFix the Task File (or the project Preflight rules) and launch again."
   }
