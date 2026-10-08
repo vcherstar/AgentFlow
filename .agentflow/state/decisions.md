@@ -138,3 +138,11 @@ The human explicitly allowed a watcher that starts background Orchestrator sessi
 closed by the human, uses the developer command lines of `run-task.ps1`, and stays inside the 2.6.0 limits: one holder
 at a time, the approved plan only, questions to `questions.md`. Rejected: a hidden background process (the window is
 how the human sees and stops it); retrying the same needs every round (cooldown, except after a usage limit).
+
+## 2026-10-08: 2.8.0 - Conductor at logon, one instance, a panel and a shortcut (human)
+
+The conductor cannot be started by an Orchestrator that has already hit its limit, so it must run before that. The
+human chose autostart at logon through Task Scheduler with a guard against a second instance, a check in the
+Orchestrator role, and a visible reminder: a desktop shortcut to a panel that shows and controls it. Rejected: a
+Claude Code session-start hook (starts a conductor per session, depends on Claude); a hidden background service (the
+human would forget it exists).
