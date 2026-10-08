@@ -302,6 +302,8 @@ def preflight(tid, manual, live):
     status = {k: v.get("Status", "") for k, v in led.items()}
     role, pre_merge = t["role"], t["role"] == "tester" and t["target"] == "local"
 
+    if (led.get(tid, {}).get("Notes") or "").startswith("awaiting approval"):
+        bad.append(f"{tid} awaits the human's approval of the plan: python .agentflow/tools/ledger.py approve {tid} once approved")
     if not manual and role == "deployer":
         bad.append("a Deployer runs only in the session the human designated: use -Manual")
     if not manual and role == "tester" and t["target"] == "prod":
