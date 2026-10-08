@@ -2,6 +2,13 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.9.2 - 2026-10-09
+
+- The end check fails a developer attempt that wrote its Result into the Task File copy inside its worktree (the main Task File stays empty) or committed a Task File on its branch; the message says how to recover. The worker prompt and the developer role now say it explicitly. Found in a project: Devin wrote and committed its Result in the worktree copy; the attempt looked fine, acceptance saw an empty Result.
+- `test_endcheck.py` covers both.
+
+Migration from 2.9.1: `install.py --update`.
+
 ## 2.9.1 - 2026-10-09
 
 - Fix: the end check failed a worker that appended the missing `## Result` heading after an empty line: the header hash counted the extra trailing blank line. `gate.py header()` now ignores trailing whitespace; hashes of existing baselines stay valid.

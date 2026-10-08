@@ -198,7 +198,8 @@ def parse(tid):
          "independent": field(head, "Independent check"), "target": "local", "env": {}, "setup": [],
          "headerHash": sha256(header(text)), "result": section(text, "Result")}
     t["prompt"] = (f"Your role: .agentflow/roles/{t['role']}.md. Your task: {f}. "
-                   "Follow .agentflow/docs/ai-handoff-protocol.md, section 'Starting a role session'.")
+                   "Follow .agentflow/docs/ai-handoff-protocol.md, section 'Starting a role session'. "
+                   f"Write your Result into exactly this file ({f}), not into a copy inside your worktree, and do not commit it.")
     setup = section(text, "Setup") + "\n" + section(text, "Port")
     for m in re.finditer(r"(?m)^[ \t]*-[ \t]*(link|copy|env)[ \t]*:[ \t]*(.+?)[ \t]*$", setup):
         if m.group(1) == "env":
@@ -395,6 +396,22 @@ def preflight(tid, manual, live):
     return t, bad
 
 
+def worktree_copy_problems(t):
+    """A developer wrote its Result into the Task File copy inside its worktree, or committed Task Files on its branch.
+    The main Task File is the only one read at acceptance; a commit under .agentflow/tasks/ moves the branch past
+    Change and would merge memory through a product branch."""
+    bad = []
+    for c in t["checkouts"]:
+        copy = Path(c["path"]) / t["rel"]
+        if copy.is_file() and section(copy.read_text(encoding="utf-8-sig"), "Result").strip() and not t["result"].strip():
+            bad.append(f"Result written in the worktree copy {copy}, not in {t['file']}: copy it there verbatim, "
+                       "and drop any commit of it from the branch (protocol: Runtime state)")
+        main = git("rev-parse", "--abbrev-ref", "HEAD", cwd=c["repo"]) or "main"
+        if Path(c["path"]).is_dir() and (log := git("log", "--format=%h %s", f"{main}..HEAD", "--", ".agentflow/tasks", cwd=c["path"])):
+            bad.append(f"branch {t['branch']} commits Task Files ({'; '.join(log.splitlines()[:3])}): only the main folder holds them")
+    return bad
+
+
 def endcheck(tid):
     """Compare the end of an attempt with its baseline. Returns the violations."""
     att = last_attempt(tid)
@@ -405,6 +422,8 @@ def endcheck(tid):
     bad = []
     if now["taskHash"] != then.get("taskHash"):
         bad.append("Task File changed above ## Result")
+    if t["role"] == "developer":
+        bad += worktree_copy_problems(t)
     if t["role"] == "tester":
         c = t["checked"]
         if now["checkedRef"] != then.get("checkedRef"):
