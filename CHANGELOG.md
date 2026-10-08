@@ -4,7 +4,7 @@ What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisi
 
 ## 2.2.0 - 2026-10-07
 
-Lessons from running the ClearMark Flow project in Team Mode with Claude Code, Codex, Devin and Antigravity.
+Lessons from running the Watermark Remover project in Team Mode with Claude Code, Codex, Devin and Antigravity.
 
 Layout and installation:
 

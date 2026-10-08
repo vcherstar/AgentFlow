@@ -20,7 +20,7 @@ Chronological log of work on the AgentFlow template.
 
 ## 2026-10-07: 2.2.0
 
-- Moved the template into `.agentflow/` with `git mv`; ported the ClearMark Flow adaptation (`paths.py`, relocated
+- Moved the template into `.agentflow/` with `git mv`; ported the Watermark Remover adaptation (`paths.py`, relocated
   paths, dashboard history and links, layout tests) and its fixes; added `install.py`, `accept.py`, VERSION, tests.
 - Protocol, roles, tool routing, Task File template, README, GUIDE, CHANGELOG updated. 19 tests pass.
 

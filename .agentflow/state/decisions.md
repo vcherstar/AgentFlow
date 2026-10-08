@@ -86,12 +86,12 @@ Why: Russian text costs about twice the tokens of English, and two copies of a r
 
 ## 2026-10-07: 2.2.0 - one `.agentflow/` folder, installer, lessons from a real Team Mode run
 
-Why: installing 2.1 into an existing workspace collided with its own `tasks/`, `tools/`, `AGENTS.md`; the ClearMark Flow
+Why: installing 2.1 into an existing workspace collided with its own `tasks/`, `tools/`, `AGENTS.md`; the Watermark Remover
 project ran Team Mode for two days with four tools and surfaced template defects (gate parsing the whole Task File,
 undetected Claude session limits, Store-packaged pwsh not passing the environment, the Python Store stub, QuickEdit
 pausing workers, manual multi-step acceptance going wrong) and missing guidance (Devin, Antigravity print mode, Codex
 desktop-app path, limit-aware routing, merge-only successors, re-tests reusing evidence).
-Decided: move everything into `.agentflow/` (the layout ClearMark Flow adapted by hand), add `install.py` (marked
+Decided: move everything into `.agentflow/` (the layout Watermark Remover adapted by hand), add `install.py` (marked
 blocks, no deletion, dry run) and `accept.py` (stop at the first failure), and fold the fixes into the protocol, roles
 and tools. Rejected: keeping the root layout (collisions); rewriting existing entry files (loses project rules);
 supporting multi-repo workspaces now (tools assume one repository; recorded as a known limit).
