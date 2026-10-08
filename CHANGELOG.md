@@ -2,6 +2,14 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.8.0 - 2026-10-08
+
+- The conductor runs once per project: a named mutex makes a second instance (the logon task, another window) exit at once. It records its pid and the time of its last round in `conductor.json`.
+- New `.agentflow/tools/conductor-panel.ps1` (Windows PowerShell 5.1 and 7): `-Install` registers autostart at logon (Task Scheduler folder `\AgentFlow\`, no time limit), puts an "AgentFlow - <project>" shortcut on the desktop and starts the conductor. Without arguments it opens a window for the human (Russian): autostart, conductor and its last round, the live Orchestrator, the background session, the last tick, tool limits, questions, what waits for a decision; buttons for autostart on/off, start/stop, a dry run, questions, session log, state folder, Task Scheduler. `-Status` / `-Start` / `-Stop` / `-Register` / `-Unregister` / `-Shortcut` from the console.
+- Orchestrator role: before the loop, check the conductor (`-Status`), start it if needed, and tell the human about `-Install` when autostart is off.
+
+Migration from 2.7.0: `install.py --update`, then once per project and machine `.agentflow\tools\conductor-panel.ps1 -Install`.
+
 ## 2.7.0 - 2026-10-08
 
 - New `.agentflow/tools/conductor.ps1`, the watcher the human leaves open: every 3 minutes `tick.py run`; when there are needs and no Orchestrator is live, a background Orchestrator session in a visible window on the first free tool of `AGENTFLOW_ORCHESTRATORS`, with the developer command line of `run-task.ps1` (full access) and `AGENTFLOW_ORCHESTRATOR_<TOOL>_ARGS`. A session that hits a usage limit records it and the next round hands over to the next tool at once; the same needs are otherwise handed over again only after `-CooldownMinutes` (60). Windows notifications for acceptances and launches, hand-overs, finished sessions, all tools limited, and changes in `questions.md`. `-Once -DryRun` shows what it would do.

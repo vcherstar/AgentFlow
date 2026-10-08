@@ -41,6 +41,7 @@ class ConductorTests(unittest.TestCase):
         tools.mkdir(parents=True)
         (self.root / ".agentflow" / "state").mkdir()
         shutil.copy(FLOW / "tools" / "conductor.ps1", tools)
+        shutil.copy(FLOW / "tools" / "conductor-panel.ps1", tools)
         (tools / "tick.py").write_text(FAKE_TICK, encoding="utf-8")
         self.rt = self.root / ".agentflow" / "tasks" / ".runtime"
         self.rt.mkdir(parents=True)
@@ -98,7 +99,7 @@ class ConductorTests(unittest.TestCase):
         self.report(needs=[NEED], live={"holder": "claude", "at": "2026-10-08T12:00:00Z"})
         out = self.conduct()
         self.assertIn("claude is live", out)
-        self.assertEqual(self.state(), {})
+        self.assertNotIn("session", self.state())
 
     def test_nothing_to_judge_starts_nothing(self):
         self.report()
@@ -140,6 +141,38 @@ class ConductorTests(unittest.TestCase):
         (self.rt / "conductor.json").write_text(json.dumps(st), encoding="utf-8")
         out = self.conduct("-DryRun")
         self.assertIn("same needs were handed over", out)
+
+    def panel_status(self, shell):
+        r = subprocess.run([shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                            str(self.root / ".agentflow" / "tools" / "conductor-panel.ps1"), "-Status"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+        return r.returncode, r.stdout + r.stderr
+
+    def test_one_conductor_per_project_and_the_panel_sees_it(self):
+        self.report()
+        self.assertEqual(self.panel_status(PWSH)[0], 1)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
+        env["AGENTFLOW_PYTHON"] = sys.executable
+        first = subprocess.Popen([PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                                  str(self.root / ".agentflow" / "tools" / "conductor.ps1"), "-NoNotify",
+                                  "-IntervalMinutes", "60"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+        try:
+            for _ in range(60):
+                if (self.state().get("conductor") or {}).get("lastRound"):
+                    break
+                time.sleep(0.5)
+            self.assertEqual(self.state()["conductor"]["pid"], first.pid)
+            out = self.conduct()
+            self.assertIn("already running", out)
+            self.assertNotIn("need", out)
+            for shell in filter(None, (PWSH, shutil.which("powershell"))):
+                code, text = self.panel_status(shell)
+                self.assertEqual(code, 0, text)
+            self.assertIn("Сторож: работает", self.panel_status(PWSH)[1])
+        finally:
+            first.kill()
+            first.wait()
+        self.assertEqual(self.panel_status(PWSH)[0], 1)
 
     def test_all_tools_limited_starts_nothing(self):
         self.report(needs=[NEED])

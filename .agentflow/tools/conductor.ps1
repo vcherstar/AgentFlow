@@ -7,6 +7,7 @@
   .agentflow\tools\conductor.ps1                 # every 3 minutes until the window is closed
   .agentflow\tools\conductor.ps1 -Once -DryRun   # one look: what would it do now? changes nothing
   .agentflow\tools\conductor.ps1 -IntervalMinutes 5 -CooldownMinutes 90
+  .agentflow\tools\conductor-panel.ps1           # status window; autostart at logon, desktop shortcut
 
 .DESCRIPTION
   Rules: .agentflow/docs/ai-handoff-protocol.md, section "Autonomous orchestration". The human starts the conductor;
@@ -172,6 +173,19 @@ function Start-Orchestrator([string]$tool, $state, [string]$why) {
   return $state
 }
 
+# --- one conductor per project: a second one (the logon task, another window) exits at once. The name is shared with
+# conductor-panel.ps1, which reads it to tell whether the conductor runs. A dry run only looks and needs no lock.
+if (-not $DryRun) {
+  $mutex = [Threading.Mutex]::new($false, "Local\AgentFlow-Conductor-$(Get-Hash $root.ToLowerInvariant())")
+  try { $own = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $own = $true }   # the last one crashed
+  if (-not $own) { Write-Host "conductor for $root is already running: this one exits."; return }
+  $me = Get-Process -Id $PID
+  $state = Read-State
+  Set-Prop $state 'conductor' ([pscustomobject][ordered]@{ pid = $PID; pidStart = [long]$me.StartTime.ToUniversalTime().Ticks
+    startedAt = (Now); lastRound = $null; intervalMinutes = $IntervalMinutes })
+  Write-State $state
+}
+
 # --- the loop --------------------------------------------------------------------------------------------------------
 Write-Host "conductor: $root, every $IntervalMinutes min$(if ($DryRun) { ', dry run' }). Close the window to stop."
 while ($true) {
@@ -231,6 +245,10 @@ while ($true) {
         Send-Notice 'AgentFlow: a question for you' 'New entry in .agentflow/state/questions.md'
       }
       if ($state.questionsHash -ne $qh) { Set-Prop $state 'questionsHash' $qh; Write-State $state }
+    }
+    if (-not $DryRun) {   # the panel shows when the conductor last looked
+      $state = Read-State
+      if ($state.conductor) { Set-Prop $state.conductor 'lastRound' (Now); Write-State $state }
     }
   } catch {
     Write-Warning "conductor round failed: $($_.Exception.Message)"
