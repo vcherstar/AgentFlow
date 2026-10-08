@@ -10,6 +10,10 @@ Used by .agentflow/tools/run-task.ps1 (pure logic here, side effects there):
   python .agentflow/tools/gate.py endcheck T-007 --out f.json
 
 Rules: .agentflow/docs/ai-handoff-protocol.md. Exit code: 0 pass, 1 fail, 2 gate error.
+
+Single repository: the repository holding .agentflow/ is the product repository. Workspace: .agentflow/workspace.json
+lists product repositories (folders under the workspace root, which is a small memory repository); a Task File names
+its repositories in `Repo:`, and commits are written `<repo>@<sha>, ...`.
 """
 import argparse
 import hashlib
@@ -24,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ledger  # noqa: E402
-from paths import FLOW_ROOT, REPO_ROOT  # noqa: E402
+from paths import FLOW_ROOT, REPO_ROOT, WORKSPACE_FILE  # noqa: E402
 
 ROOT = REPO_ROOT
 TASKS = FLOW_ROOT / "tasks"
@@ -101,8 +105,71 @@ def git_ok(*args, cwd=ROOT):
     return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True).returncode == 0
 
 
-def main_branch():
-    return git("rev-parse", "--abbrev-ref", "HEAD") or "main"
+def main_branch(repo=""):
+    return git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_dir(repo)) or "main"
+
+
+# --- repositories: "" is the single repository at ROOT; in a workspace each key is a folder under ROOT
+def workspace_repos():
+    if not WORKSPACE_FILE.exists():
+        return []
+    data = json.loads(WORKSPACE_FILE.read_text(encoding="utf-8-sig"))
+    return [r.replace("\\", "/").strip("/") for r in data.get("repos", [])]
+
+
+def repo_dir(repo):
+    return ROOT / repo if repo else ROOT
+
+
+def task_repos(head, role, checked_repos=None):
+    ws = workspace_repos()
+    raw = field(head, "Repo")
+    if not ws:
+        if raw:
+            raise TaskError("Repo: is for a workspace; this project has no .agentflow/workspace.json")
+        return [""]
+    if not raw:
+        if checked_repos:  # a tester inherits the repositories of the task it checks
+            return checked_repos
+        if role == "deployer":
+            return []
+        raise TaskError(f"Repo: is required in a workspace (one or more of: {', '.join(ws)})")
+    repos = [r.strip().replace("\\", "/").strip("/") for r in raw.split(",") if r.strip()]
+    unknown = [r for r in repos if r not in ws]
+    if unknown:
+        raise TaskError(f"Repo {', '.join(unknown)} is not in .agentflow/workspace.json ({', '.join(ws)})")
+    return repos
+
+
+def parse_shas(value, repos):
+    """`<sha>` (one repository) or `<repo>@<sha>, ...` -> {repo: sha}; None when it does not name every repository."""
+    value = (value or "").strip()
+    if m := re.match(rf"^({SHA})\b", value):
+        return {repos[0]: m.group(1).lower()} if len(repos) == 1 else None
+    pairs = dict((k.strip().replace("\\", "/").strip("/"), v.lower())
+                 for k, v in re.findall(rf"([^\s,@]+)\s*@\s*({SHA})", value))
+    return pairs if pairs and sorted(pairs) == sorted(repos) else None
+
+
+def sha_text(shas, short=False):
+    """{repo: sha} -> the form the ledger, Verifies and records use."""
+    cut = (lambda v: v[:7]) if short else (lambda v: v)
+    if list(shas) == [""]:
+        return cut(shas[""])
+    return ", ".join(f"{k}@{cut(v)}" for k, v in sorted(shas.items()))
+
+
+def sub_path(base, repo):
+    return str(Path(base) / repo) if repo else str(base)
+
+
+def checkouts(t):
+    """What run-task.ps1 creates per repository: developer worktrees on Branch, tester detached checkouts."""
+    if t["role"] == "developer":
+        return [{"repo": str(repo_dir(r)), "path": sub_path(t["worktree"], r), "branch": t["branch"]} for r in t["repos"]]
+    if t["role"] == "tester":
+        return [{"repo": str(repo_dir(r)), "path": sub_path(t["workdir"], r), "sha": t["shas"][r]} for r in t["repos"]]
+    return []
 
 
 def parse(tid):
@@ -131,34 +198,47 @@ def parse(tid):
         t["env"]["PORT"] = m.group(1)
 
     role = t["role"]
+    t["model"] = field(head, "Model")
     if role in ("tester", "deployer") and (tg := field(head, "Target")):
         if tg not in ("staging", "prod"):
             raise TaskError(f"Target '{tg}': expected staging or prod")
         t["target"] = tg
     if role == "developer":
+        t["repos"] = task_repos(head, role)
         t["workdir"] = t["worktree"]
     elif role == "tester":
-        m = re.match(rf"^(T-\d+)\s*@\s*({SHA})$", field(head, "Verifies") or "")
+        m = re.match(r"^(T-\d+)\s*@\s*(.+)$", field(head, "Verifies") or "")
         if not m:
-            raise TaskError('tester task needs "Verifies: T-xxx @ <SHA>"')
-        t["sha"] = m.group(2).lower()
+            raise TaskError('tester task needs "Verifies: T-xxx @ <SHA>" (workspace: "T-xxx @ <repo>@<SHA>, ...")')
         cf = task_file(m.group(1))
         ct = cf.read_text(encoding="utf-8-sig")
-        t["checked"] = {"id": m.group(1), "file": str(cf), "branch": field(header(ct), "Branch"),
-                        "worktree": field(header(ct), "Worktree"), "result": section(ct, "Result")}
+        ch = header(ct)
+        t["checked"] = {"id": m.group(1), "file": str(cf), "branch": field(ch, "Branch"),
+                        "worktree": field(ch, "Worktree"), "result": section(ct, "Result")}
         if not t["checked"]["worktree"]:
             raise TaskError(f"checked task {cf.name} has no Worktree")
+        t["checked"]["repos"] = task_repos(ch, "developer")
+        t["repos"] = task_repos(head, role, t["checked"]["repos"])
+        t["shas"] = parse_shas(m.group(2), t["repos"])
+        if not t["shas"]:
+            raise TaskError(f"Verifies must name one commit per repository: {', '.join(r or '<SHA>' for r in t['repos'])}")
+        t["sha"] = sha_text(t["shas"])
         t["workdir"] = f"{t['checked']['worktree']}.{tid.lower()}"  # disposable checkout of the checked commit
     elif role == "deployer":
-        m = re.match(rf"^({SHA})", field(head, "Deploys") or "")
-        if not m:
-            raise TaskError('deployer task needs "Deploys: <SHA>"')
-        t["sha"] = m.group(1).lower()
+        t["repos"] = task_repos(head, role) or workspace_repos() or [""]
+        shas = parse_shas(field(head, "Deploys"), t["repos"])
+        if not shas:  # a workspace deployer may deploy a subset: take the repositories it names
+            pairs = re.findall(rf"([^\s,@]+)\s*@\s*({SHA})", field(head, "Deploys") or "")
+            shas = {k: v.lower() for k, v in pairs} if pairs else None
+        if not shas:
+            raise TaskError('deployer task needs "Deploys: <SHA>" (workspace: "<repo>@<SHA>, ...")')
+        t["repos"], t["shas"], t["sha"] = sorted(shas), shas, sha_text(shas)
         if t["target"] == "local":
             raise TaskError('deployer task needs "Target: staging | prod"')
         t["workdir"] = str(ROOT)
     else:
         raise TaskError(f"Role '{role}': expected developer, tester or deployer")
+    t["checkouts"] = checkouts(t)
     return t
 
 
@@ -167,9 +247,13 @@ def baseline(t):
     b = {"taskHash": t["headerHash"]}
     if t["role"] == "tester":
         c = t["checked"]
-        b["checkedRef"] = git("rev-parse", "--verify", "--quiet", f"{c['branch']}^{{commit}}") if c["branch"] else None
-        wt = Path(c["worktree"])
-        b["checkedTree"] = sha256((git("rev-parse", "HEAD", cwd=wt) or "") + (git("status", "--porcelain", cwd=wt) or "")) if wt.exists() else None
+        refs, trees = [], []
+        for r in c["repos"]:
+            refs.append(git("rev-parse", "--verify", "--quiet", f"{c['branch']}^{{commit}}", cwd=repo_dir(r)) if c["branch"] else None)
+            wt = Path(sub_path(c["worktree"], r))
+            trees.append((git("rev-parse", "HEAD", cwd=wt) or "") + (git("status", "--porcelain", cwd=wt) or "") if wt.exists() else None)
+        b["checkedRef"] = refs[0] if len(refs) == 1 else json.dumps(refs)
+        b["checkedTree"] = (sha256(trees[0]) if trees[0] is not None else None) if len(trees) == 1 else sha256(json.dumps(trees))
         b["checkedFileHash"] = sha256(Path(c["file"]).read_text(encoding="utf-8-sig"))
     return b
 
@@ -236,20 +320,27 @@ def preflight(tid, manual, live):
             bad.append(f"Depends on {d} is '{status.get(d, '')}' in the ledger, needs 'done'")
     if role == "tester":
         c = t["checked"]
+        if sorted(t["repos"]) != sorted(c["repos"]):
+            bad.append(f"Repo {', '.join(t['repos'])} differs from the checked task's {', '.join(c['repos'])}")
         if pre_merge:
-            head = git("rev-parse", "--verify", "--quiet", f"{c['branch']}^{{commit}}") if c["branch"] else None
-            if not head or not head.startswith(t["sha"]):
-                bad.append(f"branch '{c['branch']}' is at '{head}', task verifies {t['sha']}")
+            for r, sha in t["shas"].items():
+                head = git("rev-parse", "--verify", "--quiet", f"{c['branch']}^{{commit}}", cwd=repo_dir(r)) if c["branch"] else None
+                if not head or not head.startswith(sha):
+                    bad.append(f"branch '{c['branch']}'{' in ' + r if r else ''} is at '{head}', task verifies {sha}")
+            change = parse_shas(field(c["result"], "Change"), c["repos"])
             if field(c["result"], "Outcome") != "completed":
                 bad.append(f"checked task {checked} has no Result with Outcome: completed")
-            elif not (field(c["result"], "Change") or "").lower().startswith(t["sha"][:7]):
+            elif not change or any(not change.get(r, "").startswith(sha[:7]) and not sha.startswith(change.get(r, "-"))
+                                   for r, sha in t["shas"].items()):
                 bad.append(f"checked task {checked} Result Change is not {t['sha']}")
-        elif not git_ok("merge-base", "--is-ancestor", t["sha"], "HEAD"):
-            bad.append(f"commit {t['sha']} is not merged into the main branch")
+        else:
+            bad += [f"commit {sha}{' in ' + r if r else ''} is not merged into the main branch"
+                    for r, sha in t["shas"].items() if not git_ok("merge-base", "--is-ancestor", sha, "HEAD", cwd=repo_dir(r))]
         if checked in live:
             bad.append(f"checked task {checked} still has a live worker")
-    if role == "deployer" and not git_ok("merge-base", "--is-ancestor", t["sha"], "HEAD"):
-        bad.append(f"commit {t['sha']} is not merged into the main branch")
+    if role == "deployer":
+        bad += [f"commit {sha}{' in ' + r if r else ''} is not merged into the main branch"
+                for r, sha in t["shas"].items() if not git_ok("merge-base", "--is-ancestor", sha, "HEAD", cwd=repo_dir(r))]
 
     # other tasks: issued and not accepted (ledger) or with a worker process (runtime, also mid-launch or manual)
     open_ids = sorted({k for k, v in status.items() if v in ("in progress", "review")} | set(live))
@@ -363,31 +454,41 @@ def verify(tid):
     sha = t.get("sha")
 
     if t["role"] == "developer":
-        m = re.match(rf"^({SHA})", result_field(t, "Change") or "")
-        sha = m.group(1).lower() if m else None
-        if sha and len(sha) < 40:  # a short SHA in the Result: record the full one, as the ledger and testers expect
-            sha = (git("rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}") or sha).lower()
-        wt = Path(t["worktree"] or "")
-        if not sha:
-            bad.append('Result needs "Change: <commit SHA>"')
-        elif (head := git("rev-parse", "--verify", "--quiet", f"{t['branch']}^{{commit}}")) is None or not head.startswith(sha):
-            bad.append(f"branch {t['branch']} is at '{head}', Result Change is {sha}")
-        elif not wt.exists() or not (git("rev-parse", "HEAD", cwd=wt) or "").startswith(sha) or git("status", "--porcelain", cwd=wt):
-            bad.append(f"worktree {wt} must exist, be clean and at {sha}")
+        shas = parse_shas(result_field(t, "Change"), t["repos"])
+        sha = None
+        if not shas:
+            bad.append('Result needs "Change: <commit SHA>"' if t["repos"] == [""] else
+                       f'Result needs "Change: {", ".join(r + "@<SHA>" for r in t["repos"])}"')
         else:
-            changed = [p.lower() for p in (git("diff", "--name-only", f"{main_branch()}...{sha}") or "").splitlines() if p]
-            bad += [f"changed file outside Allowed files: {p}" for p in changed if not any(overlap(a, p) for a in t["allowed"])]
-            flagged = [p for p in changed if any(p in c.replace("\\", "/").lower() for c in t["checks"])]
-            checks = run_checks(t, wt, log)
-            bad += [f"check failed (exit {c['exit']}): {c['cmd']}" for c in checks if c["exit"]]
-            ind = t["independent"] or ""
-            if ind.startswith("tester"):
-                ok_testers = [k for k, row in ledger_rows().items() if row.get("Status") == "done" and row.get("Role") == "tester"
-                              and _verifies(k) == (tid, sha[:7])]
-                if not ok_testers:
-                    bad.append(f"independent check pending: no done tester task with Verdict pass for {tid} @ {sha[:7]}")
-            elif not ind.startswith("none"):
-                bad.append('Task File needs "Independent check: tester | none - <reason>"')
+            changed = []
+            for r in list(shas):  # a short SHA in the Result: record the full one, as the ledger and testers expect
+                if len(shas[r]) < 40:
+                    shas[r] = (git("rev-parse", "--verify", "--quiet", f"{shas[r]}^{{commit}}", cwd=repo_dir(r)) or shas[r]).lower()
+            sha = sha_text(shas)
+            for r, rsha in shas.items():
+                where = f" in {r}" if r else ""
+                wt = Path(sub_path(t["worktree"] or "", r))
+                if (head := git("rev-parse", "--verify", "--quiet", f"{t['branch']}^{{commit}}", cwd=repo_dir(r))) is None or not head.startswith(rsha):
+                    bad.append(f"branch {t['branch']}{where} is at '{head}', Result Change is {rsha}")
+                elif not wt.exists() or not (git("rev-parse", "HEAD", cwd=wt) or "").startswith(rsha) or git("status", "--porcelain", cwd=wt):
+                    bad.append(f"worktree {wt} must exist, be clean and at {rsha}")
+                else:
+                    prefix = f"{r.lower()}/" if r else ""
+                    changed += [prefix + p.lower() for p in (git("diff", "--name-only", f"{main_branch(r)}...{rsha}", cwd=repo_dir(r)) or "").splitlines() if p]
+            if not bad:
+                bad += [f"changed file outside Allowed files: {p}" for p in changed if not any(overlap(a, p) for a in t["allowed"])]
+                flagged = [p for p in changed if any(p in c.replace("\\", "/").lower() for c in t["checks"])]
+                checks = run_checks(t, Path(t["worktree"]), log)
+                bad += [f"check failed (exit {c['exit']}): {c['cmd']}" for c in checks if c["exit"]]
+                ind = t["independent"] or ""
+                if ind.startswith("tester"):
+                    want = (tid, sha_text(shas, short=True))
+                    ok_testers = [k for k, row in ledger_rows().items() if row.get("Status") == "done" and row.get("Role") == "tester"
+                                  and _verifies(k) == want]
+                    if not ok_testers:
+                        bad.append(f"independent check pending: no done tester task with Verdict pass for {tid} @ {want[1]}")
+                elif not ind.startswith("none"):
+                    bad.append('Task File needs "Independent check: tester | none - <reason>"')
     elif t["role"] == "tester":
         vb, v = verdict_problems(t["result"])
         bad += vb
@@ -398,8 +499,10 @@ def verify(tid):
             bad.append("Result Smoke is not pass")
         if t["target"] == "prod":
             ap = result_field(t, "Approval") or ""
-            if not re.search(rf"source=human\b.*target=prod\b.*sha={sha[:7]}.*at=\S+", ap):
-                bad.append(f'prod needs "Approval: source=human target=prod sha={sha[:7]}... at=<time>" from the human in the Deployer session')
+            short = sha_text(t["shas"], short=True)
+            if not (re.search(r"source=human\b.*target=prod\b", ap) and re.search(r"\bat=\S+", ap)
+                    and all(v[:7] in ap for v in t["shas"].values())):
+                bad.append(f'prod needs "Approval: source=human target=prod sha={short} at=<time>" from the human in the Deployer session')
 
     rec = {"n": n, "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "attempt": att.get("n") if att else None,
            "role": t["role"], "sha": sha, "target": t["target"], "ok": not bad, "problems": bad, "checks": checks,
@@ -416,14 +519,14 @@ def verify(tid):
     return not bad
 
 
-def _verifies(tid):  # (checked id, sha7) of a tester task whose Result Verdict is pass, else None
+def _verifies(tid):  # (checked id, short commits) of a tester task whose Result Verdict is pass, else None
     try:
         t = parse(tid)
     except TaskError:
         return None
     if t["role"] != "tester" or field(t["result"], "Verdict") != "pass":
         return None
-    return t["checked"]["id"], t["sha"][:7]
+    return t["checked"]["id"], sha_text(t["shas"], short=True)
 
 
 def stage(n):

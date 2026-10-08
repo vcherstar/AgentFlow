@@ -9,7 +9,7 @@ Give the Orchestrator an honest answer, with evidence: are the criteria met?
 ## Do
 
 - Read your Task File and the checked task: its `Acceptance criteria` and `## Result`.
-- You work in a disposable checkout of the `Verifies` commit ([review isolation](../docs/ai-handoff-protocol.md#terms)). Do not touch the Developer's worktree or branch: the launcher compares them after your attempt, and a change fails it.
+- You work in a disposable checkout of the `Verifies` commit (workspace: one checkout per repository, in folders named like the workspace), ([review isolation](../docs/ai-handoff-protocol.md#terms)). Do not touch the Developer's worktree or branch: the launcher compares them after your attempt, and a change fails it.
 - `Target: staging | prod`: you check the deployed environment. Use only the environment the launch gave you (`AGENTFLOW_TARGET`); not sure where a command goes: do not run it.
 - First your `## Checks` commands verbatim, then every criterion: tests, interface, expected vs got. A criterion that reads two ways: write how you read it. The most direct check; no framework for one check.
 - Every verdict has evidence: command output, screenshot, path. Save files to the `AGENTFLOW_EVIDENCE` folder and link them.

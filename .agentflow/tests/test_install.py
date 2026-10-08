@@ -1,6 +1,7 @@
 """install.py on throwaway repositories: existing project files survive, nothing is deleted, refusals hold."""
 import contextlib
 import io
+import json
 import subprocess
 import sys
 import tempfile
@@ -17,7 +18,7 @@ OWN_IGNORE = "/graft/\n"
 
 
 def sh(cwd, *cmd):
-    subprocess.run(cmd, cwd=cwd, check=True, capture_output=True)
+    return subprocess.run(cmd, cwd=cwd, check=True, capture_output=True, text=True)
 
 
 class InstallTests(unittest.TestCase):
@@ -132,6 +133,73 @@ class InstallTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as stop:
             self.run_install()
         self.assertIn("root layout", str(stop.exception))
+
+
+class WorkspaceInstallTests(unittest.TestCase):
+    """A folder with several repositories and its own files, like a real multi-repository workspace."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ws = Path(self.tmp.name) / "workspace"
+        for name in ("api", "web"):
+            r = self.ws / name
+            r.mkdir(parents=True)
+            sh(r, "git", "init", "-q", "-b", "master")
+            sh(r, "git", "config", "user.email", "t@example.invalid")
+            sh(r, "git", "config", "user.name", "t")
+            (r / "AGENTS.md").write_text(f"{name} rules\n", encoding="utf-8")
+            sh(r, "git", "add", "-A")
+            sh(r, "git", "commit", "-qm", "init")
+        (self.ws / "AGENTS.md").write_text(OWN_AGENTS, encoding="utf-8")
+        (self.ws / "tools").mkdir()
+        (self.ws / "tools" / "start.ps1").write_text("# own\n", encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_install(self, **kw):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return install.install(self.ws, kw.pop("update", False), kw.pop("dry", False), **kw)
+
+    def test_refusals_explain_the_workspace_options(self):
+        with self.assertRaises(SystemExit) as stop:
+            self.run_install()
+        self.assertIn("--workspace --git-init", str(stop.exception))
+        with self.assertRaises(SystemExit) as stop:
+            self.run_install(workspace=True)
+        self.assertIn("--git-init", str(stop.exception))
+        with self.assertRaises(SystemExit):
+            self.run_install(workspace=True, git_init=True, repos=["api", "mobile"])
+
+    def test_dry_run_creates_nothing(self):
+        plan = self.run_install(workspace=True, git_init=True, dry=True)
+        self.assertTrue(any("git init" in a for a in plan.actions))
+        self.assertFalse((self.ws / ".git").exists())
+        self.assertFalse((self.ws / ".agentflow").exists())
+
+    def test_install_and_update(self):
+        heads = {r: sh(self.ws / r, "git", "rev-parse", "HEAD").stdout for r in ("api", "web")}
+        self.run_install(workspace=True, git_init=True)
+        self.assertTrue((self.ws / ".git").exists())
+        self.assertEqual(json.loads((self.ws / ".agentflow" / "workspace.json").read_text(encoding="utf-8")),
+                         {"repos": ["api", "web"]})
+        ignore = (self.ws / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("/api/", ignore)
+        self.assertIn("/web/", ignore)
+        self.assertTrue((self.ws / "AGENTS.md").read_text(encoding="utf-8").startswith(OWN_AGENTS.rstrip("\n")))
+        self.assertEqual((self.ws / "tools" / "start.ps1").read_text(encoding="utf-8"), "# own\n")
+        for r in ("api", "web"):
+            self.assertEqual((self.ws / r / "AGENTS.md").read_text(encoding="utf-8"), f"{r} rules\n")
+            self.assertEqual(sh(self.ws / r, "git", "rev-parse", "HEAD").stdout, heads[r])
+            self.assertFalse((self.ws / r / ".agentflow").exists())
+        sh(self.ws, "git", "config", "user.email", "t@example.invalid")
+        sh(self.ws, "git", "config", "user.name", "t")
+        sh(self.ws, "git", "add", "-A")
+        sh(self.ws, "git", "commit", "-qm", "agentflow")
+        tracked = sorted(set(p.split("/")[0] for p in sh(self.ws, "git", "ls-files").stdout.split()))
+        self.assertEqual(tracked, [".agentflow", ".claude", ".gitignore", "AGENTS.md", "CLAUDE.md"],
+                         "the memory repository tracks AgentFlow files only, not tools/ or the repositories")
+        self.assertEqual(self.run_install(update=True).actions, [])
 
 
 class TemplateEntryPointTests(unittest.TestCase):

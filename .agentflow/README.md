@@ -13,6 +13,7 @@ Everything AgentFlow needs lives in this folder, so it never collides with a pro
 | `tasks/_template.md` | template | Task File template; `tasks/T-NNN-*.md` are the project's Task Files |
 | `tasks/.runtime/` | local | attempt history, logs, evidence (git-ignored) |
 | `state/` | project | handoff, current step, decisions, known issues, session log, Task Ledger |
+| `workspace.json` | project | workspace only: the product repositories under the workspace root |
 | `tools/` | template | `run-task.ps1` launcher, `gate.py`, `ledger.py`, `accept.py`, `install.py`, `paths.py` |
 | `dashboard/` | template | read-only view for the human (`python .agentflow/dashboard/build.py`) |
 | `tests/` | template | checks of the tools themselves (`python -m unittest discover -s .agentflow/tests`) |

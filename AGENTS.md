@@ -5,7 +5,7 @@ This repository is the AgentFlow template. Its product is `.agentflow/` plus the
 <!-- agentflow:begin -->
 ## AgentFlow
 
-AgentFlow version: 2.2.0. Workflow files live in `.agentflow/`; this block is template-owned and replaced on update.
+AgentFlow version: 2.3.0. Workflow files live in `.agentflow/`; this block is template-owned and replaced on update.
 
 Source of truth: `.agentflow/docs/ai-handoff-protocol.md`. Read it first, then follow it. Project rules:
 `.agentflow/docs/project-rules.md` (and any rules in this file outside this block).

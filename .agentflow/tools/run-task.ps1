@@ -102,29 +102,42 @@ function Test-Alive($a) {
 }
 function Test-Held($a) { $a -and $a.status -eq 'running' -and ($a.manual -or -not $a.pid -or (Test-Alive $a)) }
 
-function Remove-Checkout($t) {   # tester checkouts are disposable
-  if ($t.role -ne 'tester' -or -not (Test-Path $t.workdir)) { return }
-  git -C $root worktree remove --force $t.workdir 2>$null
-  if ($LASTEXITCODE -and (Test-Path $t.workdir)) {
-    try { Remove-Item -Recurse -Force $t.workdir -ErrorAction Stop; git -C $root worktree prune }
-    catch { Write-Warning "could not remove tester checkout $($t.workdir): $($_.Exception.Message)" }
+function Remove-Checkout($t) {   # tester checkouts are disposable: one per repository (gate.py "checkouts")
+  if ($t.role -ne 'tester') { return }
+  foreach ($c in @($t.checkouts)) {
+    if (-not (Test-Path $c.path)) { continue }
+    git -C $c.repo worktree remove --force $c.path 2>$null
+    if ($LASTEXITCODE -and (Test-Path $c.path)) {
+      try { Remove-Item -Recurse -Force $c.path -ErrorAction Stop; git -C $c.repo worktree prune }
+      catch { Write-Warning "could not remove tester checkout $($c.path): $($_.Exception.Message)" }
+    }
+  }
+  if ((Test-Path $t.workdir) -and -not (Get-ChildItem -Force $t.workdir | Select-Object -First 1)) {
+    Remove-Item -Force $t.workdir   # the empty folder that held a workspace tester's checkouts
   }
 }
-function Initialize-Workdir($t) {   # worktree (developer) or disposable checkout (tester), then Setup links and copies
+function Initialize-Workdir($t) {   # worktrees (developer) or disposable checkouts (tester), then Setup links and copies
   if ($t.role -eq 'developer') {
-    if (Test-Path $t.workdir) {
-      $cur = git -C $t.workdir rev-parse --abbrev-ref HEAD 2>$null
-      if ($cur -ne $t.branch) { throw "worktree $($t.workdir) is on branch '$cur', task needs '$($t.branch)'. Not this task's: stop." }
-      Write-Host "worktree exists on $($t.branch): resume"
-    } else {
-      git -C $root worktree add $t.workdir -b $t.branch
-      if ($LASTEXITCODE) { throw 'git worktree add failed' }
+    foreach ($c in @($t.checkouts)) {
+      if (Test-Path $c.path) {
+        $cur = git -C $c.path rev-parse --abbrev-ref HEAD 2>$null
+        if ($cur -ne $c.branch) { throw "worktree $($c.path) is on branch '$cur', task needs '$($c.branch)'. Not this task's: stop." }
+        Write-Host "worktree $($c.path) exists on $($c.branch): resume"
+      } else {
+        New-Item -ItemType Directory -Force (Split-Path $c.path) | Out-Null
+        $exists = git -C $c.repo rev-parse --verify --quiet "refs/heads/$($c.branch)" 2>$null
+        if ($exists) { git -C $c.repo worktree add $c.path $c.branch } else { git -C $c.repo worktree add $c.path -b $c.branch }
+        if ($LASTEXITCODE) { throw "git worktree add failed for $($c.path)" }
+      }
     }
   }
   if ($t.role -eq 'tester') {
     Remove-Checkout $t
-    git -C $root worktree add --detach $t.workdir $t.sha
-    if ($LASTEXITCODE) { throw 'git worktree add (tester checkout) failed' }
+    foreach ($c in @($t.checkouts)) {
+      New-Item -ItemType Directory -Force (Split-Path $c.path) | Out-Null
+      git -C $c.repo worktree add --detach $c.path $c.sha
+      if ($LASTEXITCODE) { throw "git worktree add (tester checkout) failed for $($c.path)" }
+    }
     New-Item -ItemType Directory -Force (Join-Path $rtDir "$($t.id).evidence") | Out-Null
   }
   foreach ($s in @($t.setup)) {

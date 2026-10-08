@@ -38,7 +38,7 @@ Change the code so that the `Acceptance criteria` hold: the smallest change, wit
 ```markdown
 ## Result
 Outcome: completed | blocked | failed
-Change: <SHA> on <branch>
+Change: <SHA> on <branch>          (workspace: Change: <repo>@<SHA>, <repo>@<SHA> on <branch>)
 Files:
 - path - what changed
 Checks:

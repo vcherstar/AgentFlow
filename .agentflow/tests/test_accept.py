@@ -11,9 +11,11 @@ sys.path.insert(0, str(FLOW / "tools"))
 import accept  # noqa: E402
 
 SHA = "a" * 40
-DEV = {"id": "T-900", "role": "developer", "branch": "t-900-probe", "worktree": "W:/nowhere/t-900",
+DEV = {"id": "T-900", "role": "developer", "branch": "t-900-probe", "worktree": "W:/nowhere/t-900", "repos": [""],
+       "checkouts": [{"repo": ".", "path": "W:/nowhere/t-900", "branch": "t-900-probe"}],
        "result": f"Outcome: completed\nChange: {SHA}\n"}
-TESTER = {"id": "T-901", "role": "tester", "sha": SHA, "result": "Outcome: completed\nVerdict: pass\n"}
+TESTER = {"id": "T-901", "role": "tester", "sha": SHA, "shas": {"": SHA}, "repos": [""], "checkouts": [],
+          "result": "Outcome: completed\nVerdict: pass\n"}
 
 
 class AcceptTests(unittest.TestCase):
@@ -49,7 +51,7 @@ class AcceptTests(unittest.TestCase):
     def test_developer_steps_in_order(self):
         calls, stopped = self.go(DEV)
         self.assertIsNone(stopped)
-        order = ["gate.py verify", "git merge --no-ff t-900-probe", "--status review", "--status done --commit " + SHA,
+        order = ["gate.py verify", "git merge-tree --write-tree", "git merge --no-ff t-900-probe", "--status review", "--status done --commit " + SHA,
                  "git worktree prune", "git branch -d t-900-probe"]
         idx = [next(i for i, c in enumerate(calls) if o in c) for o in order]
         self.assertEqual(idx, sorted(idx), calls)
@@ -75,7 +77,12 @@ class AcceptTests(unittest.TestCase):
 
     def test_already_merged_branch_is_not_merged_again(self):
         calls, _ = self.go(DEV, merged=True)
-        self.assertFalse(any("git merge --no-ff" in c for c in calls))
+        self.assertFalse(any("git merge --no-ff" in c or "merge-tree" in c for c in calls))
+
+    def test_trial_merge_conflict_stops_before_merge(self):
+        calls, stopped = self.go(DEV, fail_on="merge-tree")
+        self.assertIsNotNone(stopped)
+        self.assertFalse(any("git merge --no-ff" in c or "ledger.py" in c for c in calls))
 
 
 if __name__ == "__main__":

@@ -7,12 +7,13 @@ Role: developer | tester | deployer
 Tool: claude | codex | agy | devin | antigravity      <!-- ../roles/tool-routing.md -->
 Stage: <Stage number from .agentflow/docs/project-plan.md>
 Depends on: T-xxx | none
+Repo: <repo>[, <repo>...]                      <!-- workspace only: repositories from .agentflow/workspace.json; delete the line in a single repository -->
 Branch: t-NNN-slug                            <!-- developer -->
 Worktree: <worktrees>\<repo>-t-NNN-slug       <!-- developer; <worktrees> from Project rules -->
 Independent check: tester | none - <reason>   <!-- developer -->
 Resume: none                                  <!-- after a failed attempt: <commit SHA> | start fresh -->
-Verifies: T-xxx @ <SHA>                       <!-- tester: checked task and commit -->
-Deploys: <SHA>                                <!-- deployer -->
+Verifies: T-xxx @ <SHA>                       <!-- tester: checked task and commit; workspace: T-xxx @ <repo>@<SHA>, ... -->
+Deploys: <SHA>                                <!-- deployer; workspace: <repo>@<SHA>, ... -->
 Target: staging | prod                        <!-- deployer; tester after a deploy. Pre-merge tester: delete the line -->
 
 ## Goal

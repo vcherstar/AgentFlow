@@ -2,6 +2,17 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.3.0 - 2026-10-08
+
+- Workspace mode: a folder that holds several repositories. Its root becomes a small memory repository (it tracks only AgentFlow files and the root entry points; the product repositories are ignored by it and stay independent); `.agentflow/workspace.json` lists the repositories. Task Files name them in `Repo:`; paths start with the repository folder; commits are `<repo>@<SHA>, ...` in `Change:`, `Verifies:`, `Deploys:`. One branch per task in every named repository; `Worktree` holds one worktree per repository.
+- `gate.py`: repositories per task, per-repository branch / worktree / diff / merge checks, tester checkouts per repository (`checkouts` in the task JSON drive `run-task.ps1`). Single-repository projects behave as before.
+- `accept.py`: a trial merge (`git merge-tree`) in every repository before any merge; untracked files no longer block acceptance; the workspace memory repository does not count its product repositories as changes.
+- `run-task.ps1`: creates and removes worktrees and tester checkouts per repository; a developer worktree is re-created on an existing task branch.
+- `install.py`: `--workspace`, `--repos`, `--git-init`; finds the repositories by their `.git`; points to the workspace option when a folder of repositories is refused.
+- Tests: `test_workspace.py` runs the real tools end to end on throwaway repositories (single repository, two repositories, a file outside Allowed files, a conflict in one repository, tester and Repo validation).
+
+Migration from 2.2.0: `install.py --update`. Projects with one repository change nothing.
+
 ## 2.2.0 - 2026-10-07
 
 Lessons from running the Watermark Remover project in Team Mode with Claude Code, Codex, Devin and Antigravity.
@@ -28,8 +39,6 @@ Protocol and roles:
 - Developer: commit early and amend the single task commit on long tasks. Tester: report placement rules; mark checks blocked by the environment `unverified`.
 - Tool routing: Devin, plan for limits (Claude worker sessions can end in minutes, Antigravity quotas for days, the Codex sandbox on Windows can refuse processes), the Codex desktop-app CLI path.
 - GUIDE: installation into an existing project, update, migration from the root layout, machine setup.
-
-Known limits: a folder that holds several repositories (a multi-repo workspace) is not supported; install into each repository.
 
 Migration from 2.1.x (root layout):
 

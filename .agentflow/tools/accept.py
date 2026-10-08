@@ -4,13 +4,15 @@
   python .agentflow/tools/accept.py T-007 --dry-run  # print the steps without changing anything
 
 Rules: .agentflow/docs/ai-handoff-protocol.md, "Task lifecycle" and "Git rules". Only the Orchestrator (or a
-Single Mode session) runs this, from the main folder on the main branch.
+Single Mode session) runs this, from the main folder with every repository on its main branch.
 
-Developer: gate.py verify -> git merge --no-ff <branch> -> ledger review/done -> git worktree remove -> git branch -d.
-Tester:    gate.py verify -> ledger review/done with the Verifies SHA (nothing to merge).
-Every step runs only when the previous one succeeded; a failed merge is aborted. The printed log says exactly which
-steps ran, so a partial run can be finished by hand. Nothing is force-deleted: worktree removal and `git branch -d`
-refuse unmerged or dirty state, and that refusal is reported, not overridden.
+Developer: gate.py verify -> a trial merge in every repository (`git merge-tree`, writes nothing) -> git merge --no-ff
+           <branch> in every repository -> ledger review/done -> git worktree remove -> git branch -d.
+Tester:    gate.py verify -> ledger review/done with the Verifies commits (nothing to merge).
+Every step runs only when the previous one succeeded; a conflict found by the trial merge stops before any repository
+is merged, and a failed merge is aborted. The printed log says exactly which steps ran, so a partial run can be
+finished by hand. Nothing is force-deleted: worktree removal and `git branch -d` refuse unmerged or dirty state, and
+that refusal is reported, not overridden.
 """
 import argparse
 import subprocess
@@ -43,10 +45,6 @@ def run(cmd, dry, cwd=REPO_ROOT, check=True):
     return p.stdout
 
 
-def status_of(tid):
-    return ledger_rows().get(tid, {}).get("Status")
-
-
 def ledger_rows():
     path = ledger.ledger_path()
     if not path.exists():
@@ -57,7 +55,7 @@ def ledger_rows():
 
 def to_done(tid, sha, dry):
     py = sys.executable
-    st = status_of(tid)
+    st = ledger_rows().get(tid, {}).get("Status")
     if st == "done":
         print(f"  ledger: {tid} is already done")
         return
@@ -66,14 +64,25 @@ def to_done(tid, sha, dry):
     run([py, TOOLS / "ledger.py", "set", tid, "--status", "done", "--commit", sha], dry)
 
 
+def dirty(repo):
+    """Tracked changes that could mix into a merge. Not counted: untracked files, the memory under .agentflow/, and in
+    the memory repository the workspace repositories themselves (each is checked on its own)."""
+    lines = (gate.git("status", "--porcelain", cwd=gate.repo_dir(repo)) or "").splitlines()
+    own = set(gate.workspace_repos()) if repo == "" else set()
+
+    def counts(l):
+        path = l[3:].strip().strip('"').rstrip("/")
+        return not l.startswith("??") and not (repo == "" and (path.startswith(".agentflow/") or path in own))
+    return [l for l in lines if l and counts(l)]
+
+
 def accept(tid, dry):
     t = gate.parse(tid)
-    main = gate.main_branch()
-    print(f"{tid}: role {t['role']}, main folder on '{main}'")
-    dirty = [l for l in (gate.git("status", "--porcelain") or "").splitlines()
-             if l and not l[3:].replace("\\", "/").startswith(".agentflow/") and not l[3:].startswith('".agentflow/')]
-    if dirty:
-        raise Stop("the main folder has uncommitted changes outside .agentflow/: " + "; ".join(dirty[:5]))
+    repos = t["repos"]
+    print(f"{tid}: role {t['role']}, repositories: {', '.join(r or '(this repository)' for r in repos)}")
+    for r in sorted(set(repos) | {""}):
+        if d := dirty(r):
+            raise Stop(f"uncommitted changes in {r or 'the main folder'}: " + "; ".join(d[:5]))
 
     with tempfile.TemporaryDirectory() as tmp:
         print("1. verify")
@@ -88,37 +97,49 @@ def accept(tid, dry):
     if t["role"] != "developer":
         raise Stop(f"role '{t['role']}': accept handles developer and tester tasks; a deployer is closed by hand")
 
-    m = gate.re.match(rf"^({gate.SHA})", gate.result_field(t, "Change") or "")
-    if not m:
-        raise Stop('Result needs "Change: <commit SHA>"')
-    sha = gate.git("rev-parse", "--verify", "--quiet", f"{m.group(1)}^{{commit}}") or m.group(1)
+    shas = gate.parse_shas(gate.result_field(t, "Change"), repos)
+    if not shas:
+        raise Stop('Result needs "Change: ..." naming one commit per repository')
+    for r in shas:
+        shas[r] = gate.git("rev-parse", "--verify", "--quiet", f"{shas[r]}^{{commit}}", cwd=gate.repo_dir(r)) or shas[r]
     title = ledger_rows().get(tid, {}).get("Title", "").strip()
+    todo = [r for r in repos if not gate.git_ok("merge-base", "--is-ancestor", shas[r], "HEAD", cwd=gate.repo_dir(r))]
 
-    print("2. merge")
-    if gate.git_ok("merge-base", "--is-ancestor", sha, "HEAD"):
-        print(f"  {t['branch']} is already merged into {main}")
-    else:
+    print("2. trial merge")
+    for r in repos:
+        if r not in todo:
+            print(f"  {t['branch']}{' in ' + r if r else ''} is already merged")
+            continue
+        run(["git", "merge-tree", "--write-tree", "--quiet", "HEAD", t["branch"]], dry, cwd=gate.repo_dir(r))
+
+    print("3. merge")
+    for r in todo:
         try:
-            run(["git", "merge", "--no-ff", t["branch"], "-m", f"Merge {tid}: {title or t['branch']}"], dry)
+            run(["git", "merge", "--no-ff", t["branch"], "-m", f"Merge {tid}: {title or t['branch']}"], dry, cwd=gate.repo_dir(r))
         except Stop:
-            run(["git", "merge", "--abort"], dry, check=False)
-            raise Stop(f"merge of {t['branch']} failed and was aborted; resolve it in a successor task")
+            run(["git", "merge", "--abort"], dry, cwd=gate.repo_dir(r), check=False)
+            done = todo[:todo.index(r)]
+            raise Stop(f"merge of {t['branch']}{' in ' + r if r else ''} failed and was aborted"
+                       + (f"; already merged: {', '.join(done)}" if done else "") + "; resolve it in a successor task")
 
-    print("3. ledger")
-    to_done(tid, sha, dry)
+    print("4. ledger")
+    to_done(tid, gate.sha_text(shas), dry)
 
-    print("4. cleanup")
-    wt = t["worktree"]
-    if wt and Path(wt).exists():
-        run(["git", "worktree", "remove", wt], dry)
-    else:
-        print(f"  worktree {wt} is already gone")
-    run(["git", "worktree", "prune"], dry)
-    if gate.git_ok("rev-parse", "--verify", "--quiet", f"refs/heads/{t['branch']}"):
-        run(["git", "branch", "-d", t["branch"]], dry)
-    else:
-        print(f"  branch {t['branch']} is already deleted")
-    print(f"{tid} accepted and merged into {main}.")
+    print("5. cleanup")
+    for c in t["checkouts"]:
+        if Path(c["path"]).exists():
+            run(["git", "worktree", "remove", c["path"]], dry, cwd=c["repo"])
+        else:
+            print(f"  worktree {c['path']} is already gone")
+        run(["git", "worktree", "prune"], dry, cwd=c["repo"])
+        if gate.git_ok("rev-parse", "--verify", "--quiet", f"refs/heads/{t['branch']}", cwd=c["repo"]):
+            run(["git", "branch", "-d", t["branch"]], dry, cwd=c["repo"])
+        else:
+            print(f"  branch {t['branch']} is already deleted in {c['repo']}")
+    w = Path(t["worktree"] or "")
+    if repos != [""] and w.is_dir() and not any(w.iterdir()) and not dry:
+        w.rmdir()  # the empty folder that held the task's worktrees
+    print(f"{tid} accepted and merged.")
 
 
 def main():

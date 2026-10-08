@@ -96,3 +96,12 @@ blocks, no deletion, dry run) and `accept.py` (stop at the first failure), and f
 and tools. Rejected: keeping the root layout (collisions); rewriting existing entry files (loses project rules);
 supporting multi-repo workspaces now (tools assume one repository; recorded as a known limit).
 
+## 2026-10-08: 2.3.0 - workspace mode
+
+Why: the human's AIHomeDesign workspace holds five repositories and is not a repository itself; the human asked for
+both a shared mode and the per-repository install. Decided: the workspace root becomes a memory repository that
+tracks only AgentFlow files (default-ignore everything else, product repositories ignored); `workspace.json` lists the
+repositories; tasks name them in `Repo:`; paths are workspace-relative so Checks read the same in the root and in a
+task folder; acceptance does a trial merge everywhere first. Rejected: memory without git (no history, no dashboard);
+git submodules (they change the product repositories); per-repository memory copies (two sources of truth).
+
