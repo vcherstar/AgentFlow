@@ -125,6 +125,10 @@ class Base(unittest.TestCase):
         p.write_text(p.read_text(encoding="utf-8") + f"Outcome: completed\nChange: {change}\n", encoding="utf-8")
         self.tool(root, "ledger.py", "add", "T-001", "--title", "Probe", "--stage", "1", "--role", "developer", "--tool", "codex")
         self.tool(root, "ledger.py", "set", "T-001", "--status", "in progress")
+        # like a real main folder: the memory is committed, then changes again before acceptance
+        sh(root, "git", "add", ".agentflow")
+        sh(root, "git", "commit", "-qm", "memory")
+        self.tool(root, "ledger.py", "set", "T-001", "--notes", "changed after the commit")
 
 
 class SingleRepositoryTests(Base):
@@ -168,6 +172,22 @@ class SingleRepositoryTests(Base):
             r = sh(root, pwsh, "-NoProfile", "-Command", f"(Get-Content '{out}' -Raw | ConvertFrom-Json).sha", check=False)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(r.stdout.strip(), sha)
+
+
+    def test_tracked_change_outside_memory_still_blocks(self):
+        root = self.base / "project"
+        new_repo(root)
+        self.install_tools(root)
+        wt = self.base / "wt" / "project-t-001-probe"
+        (root / ".agentflow" / "tasks" / "T-001-probe.md").write_text(task_text("", "- `src/`", wt), encoding="utf-8")
+        self.start_attempt(root)
+        sha = self.commit_in(wt, "src/probe.txt")
+        self.finish(root, sha)
+        (root / "README.md").write_text("edited in the main folder\n", encoding="utf-8")
+        r = self.tool(root, "accept.py", "T-001", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("README.md", r.stdout)
+        self.assertNotIn(".agentflow", r.stdout.split("STOPPED:")[-1])
 
 
 class WorkspaceTests(Base):

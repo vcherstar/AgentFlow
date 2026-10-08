@@ -2,6 +2,12 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.5.3 - 2026-10-08
+
+- Fix: `accept.py` refused every acceptance once the committed memory (for example the ledger) had changed: the trimmed `git status` output lost the first line leading space, so `.agentflow/...` read as `agentflow/...` and counted as a change outside the memory. It now reads `git status --porcelain -z` raw. Tests commit the memory before acceptance, as a real main folder does, and check that a real change outside it still blocks.
+
+Migration from 2.5.x: `install.py --update`.
+
 ## 2.5.2 - 2026-10-08
 
 - Fix: tester tasks in a single-repository project could not launch since 2.3.0. The task JSON for `run-task.ps1` carried the single repository commit under an empty key, which PowerShell `ConvertFrom-Json` rejects; `gate.py` now writes that key as `.`. A new test reads a tester task JSON with real PowerShell.

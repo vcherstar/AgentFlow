@@ -66,14 +66,25 @@ def to_done(tid, sha, dry):
 
 def dirty(repo):
     """Tracked changes that could mix into a merge. Not counted: untracked files, the memory under .agentflow/, and in
-    the memory repository the workspace repositories themselves (each is checked on its own)."""
-    lines = (gate.git("status", "--porcelain", cwd=gate.repo_dir(repo)) or "").splitlines()
+    the memory repository the workspace repositories themselves (each is checked on its own). Reads `git status
+    --porcelain -z` raw: a trimmed porcelain line loses its leading space and shifts every path by one character."""
+    p = subprocess.run(["git", "-C", str(gate.repo_dir(repo)), "status", "--porcelain", "-z"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     own = set(gate.workspace_repos()) if repo == "" else set()
-
-    def counts(l):
-        path = l[3:].strip().strip('"').rstrip("/")
-        return not l.startswith("??") and not (repo == "" and (path.startswith(".agentflow/") or path in own))
-    return [l for l in lines if l and counts(l)]
+    out, entries = [], p.stdout.split("\0")
+    i = 0
+    while i < len(entries):
+        e = entries[i]
+        i += 1
+        if len(e) < 4:
+            continue
+        code, path = e[:2], e[3:].rstrip("/")
+        if code[0] in "RC":  # a rename or copy carries its source path as the next entry
+            i += 1
+        if code == "??" or (repo == "" and (path.startswith(".agentflow/") or path in own)):
+            continue
+        out.append(f"{code} {path}")
+    return out
 
 
 def accept(tid, dry):
