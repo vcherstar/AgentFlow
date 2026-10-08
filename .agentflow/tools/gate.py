@@ -53,7 +53,9 @@ def field(text, name):
 
 
 def header(text):  # everything above "## Result": the worker must not change it
-    return re.sub(r"(?ms)^## Result[ \t]*$.*\Z", "", text.replace("\r\n", "\n"))
+    # Trailing blank lines do not count: a worker that adds the missing "## Result" heading after an empty line
+    # changes nothing above it.
+    return re.sub(r"(?ms)^## Result[ \t]*$.*\Z", "", text.replace("\r\n", "\n")).rstrip() + "\n"
 
 
 def sha256(s):

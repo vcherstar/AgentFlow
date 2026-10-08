@@ -154,3 +154,10 @@ every `ready` task whose tool is free, so they would have started before the hum
 to fix it in the template as a priority. Approval is now state, not memory: `ledger.py add` defaults to `blocked` with
 `awaiting approval`, preflight refuses such a task, `ledger.py approve` releases it. Rejected: a separate status (every
 tool and the dashboard know the current ones); relying on the heartbeat alone (it goes stale while the human thinks).
+
+## 2026-10-09: 2.9.1 - End check ignores trailing blank lines; -Recheck
+
+In Watermark Remover, Devin finished T-033 with a correct Result, but the attempt became `error`: the Task File had no
+`## Result` heading and Devin appended it after an empty line, which changed the hashed header by one trailing newline.
+Fixed in the hash (trailing whitespace is not content) and added `-Recheck` so such an attempt is not redone. Rejected:
+editing the runtime state by hand (only the launcher writes it); a new attempt (an hour of work repeated for a formality).
