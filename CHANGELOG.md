@@ -2,6 +2,13 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.5.1 - 2026-10-08
+
+- Fix: a task `Model:` line now replaces the matching flags from `AGENTFLOW_<TOOL>_ARGS` instead of adding a second copy. Devin exited at start ("--model cannot be used multiple times") when both were set, and for Codex a machine `-c model_reasoning_effort` silently overrode the task effort.
+- New `test_launcher_args.py` runs the launcher functions in real PowerShell.
+
+Migration from 2.5.0: `install.py --update`.
+
 ## 2.5.0 - 2026-10-08
 
 TypeSafe integration rebuilt from the official documentation (https://docs.typesafe.ai):

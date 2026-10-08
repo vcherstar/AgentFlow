@@ -79,11 +79,25 @@ $Tools = @{
               args = { param($p, $r) @('-p', $p, '--permission-mode', 'dangerous', '--respect-workspace-trust', 'false') } }
 }
 
+function Remove-Overridden([string[]]$list, $t) {   # the task's Model line wins over machine defaults
+  $out = @(); $skip = $false
+  for ($i = 0; $i -lt $list.Count; $i++) {
+    if ($skip) { $skip = $false; continue }
+    $a = $list[$i]; $next = if ($i + 1 -lt $list.Count) { $list[$i + 1] } else { '' }
+    if ($t.model -and $a -in '-m', '--model') { $skip = $true; continue }
+    if ($t.model -and $a -match '^(-m|--model)=') { continue }
+    if ($t.effort -and $a -eq '--effort') { $skip = $true; continue }
+    if ($t.effort -and $a -match '^--effort=') { continue }
+    if ($t.effort -and $a -eq '-c' -and $next -match '^model_reasoning_effort=') { $skip = $true; continue }
+    $out += $a
+  }
+  return ,$out
+}
 function Get-ModelArgs([string]$tool, $t) {   # machine defaults from AGENTFLOW_<TOOL>_ARGS, then the task's Model line
   $extra = @()
-  if ($tool -ne 'codex') {   # codex keeps AGENTFLOW_CODEX_ARGS in $Tools
+  if ($tool -ne 'codex') {   # codex keeps AGENTFLOW_CODEX_ARGS in $Tools (filtered in the worker)
     $envArgs = [Environment]::GetEnvironmentVariable("AGENTFLOW_$($tool.ToUpper())_ARGS")
-    if ($envArgs) { $extra += $envArgs.Trim() -split '\s+' }
+    if ($envArgs) { $extra += Remove-Overridden ($envArgs.Trim() -split '\s+') $t }
   }
   if ($t.model) {
     $extra += $(switch ($tool) { 'codex' { '-m' } default { '--model' } }), $t.model
@@ -241,6 +255,7 @@ if ($Worker) {
     Set-Location -LiteralPath $t.workdir -ErrorAction Stop
     $e = Get-WorkerEnv $t
     foreach ($k in $e.Keys) { Set-Item "env:$k" $e[$k] }
+    if ($Tool -eq 'codex') { $codexArgs = Remove-Overridden $codexArgs $t }   # $Tools reads it when called
     $argv = & $spec.args $t.prompt $t.role
     $extra = Get-ModelArgs $Tool $t
     if ($extra.Count) {   # codex: options go after "exec"; the other tools take them anywhere
