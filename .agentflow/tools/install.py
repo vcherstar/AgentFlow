@@ -41,7 +41,7 @@ from pathlib import Path
 TEMPLATE_FLOW = Path(__file__).resolve().parent.parent  # <template>/.agentflow
 
 # template-owned paths inside .agentflow/ (directories are copied recursively, minus SKIP)
-OWNED = ["README.md", "VERSION", "docs/ai-handoff-protocol.md", "roles", "commands", "tasks/_template.md",
+OWNED = ["README.md", "VERSION", "docs/ai-handoff-protocol.md", "docs/typesafe.md", "roles", "commands", "tasks/_template.md",
          "tools", "dashboard", "tests"]
 SKIP = {"__pycache__", "out", "versions", ".runtime"}
 
@@ -63,9 +63,10 @@ STUBS = {
         "## Tool routing\n\n<installed tools, their paths and limits on this machine>\n"),
     "docs/model-options.json": (
         '{\n  "policy": "<how to choose: what is free or has unused capacity, what is limited, testers on another tool>",\n'
+        '  "jev_model": "jev-1.13.0",\n'
         '  "options": {\n'
-        '    "claude": {"tool": "claude", "describe": "complex multi-file work and architecture"},\n'
-        '    "codex": {"tool": "codex", "describe": "long tasks, testers (sandboxed review)"}\n'
+        '    "claude": {"tool": "claude", "what": "complex multi-file work and architecture", "not_for": "long mechanical work"},\n'
+        '    "codex": {"tool": "codex", "what": "long tasks, testers (sandboxed review)", "not_for": "UI design"}\n'
         '  }\n}\n'),
 }
 

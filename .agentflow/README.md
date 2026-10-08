@@ -7,6 +7,7 @@ Everything AgentFlow needs lives in this folder, so it never collides with a pro
 |---|---|---|
 | `VERSION` | template | installed AgentFlow version |
 | `docs/ai-handoff-protocol.md` | template | the protocol: terms, states, rules, session steps |
+| `docs/typesafe.md` | template | TypeSafe AI: official documentation links and the rules `route.py` follows |
 | `docs/project-rules.md`, `docs/project-plan.md` | project | Project rules (worktrees, Preflight, Tool routing) and the roadmap |
 | `roles/` | template | one file per role; `tool-routing.md`: which tool takes which task |
 | `commands/` | template | slash-command texts; `.claude/commands/` holds one-line pointers here |

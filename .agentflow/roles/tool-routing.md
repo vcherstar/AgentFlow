@@ -6,7 +6,7 @@ This file is shared by all projects and replaced on template update: notes from 
 
 ## How to choose
 
-0. If the project has `.agentflow/docs/model-options.json` and a TypeSafe key: `python .agentflow/tools/route.py T-NNN` first; take its answer above the threshold, otherwise continue here. Keep the options file current: free windows (`until`), quotas that come back (`from`), the policy in one or two sentences.
+0. If the project has `.agentflow/docs/model-options.json` and a TypeSafe key: `python .agentflow/tools/route.py T-NNN` first. Exit 0 (confidence >= 0.9): take it (`--apply`); exit 4 (0.5-0.9): confirm it against the tables below; exit 3: decide here. Rules and links: [../docs/typesafe.md](../docs/typesafe.md). Keep the options file current: free windows (`until`), quotas that come back (`from`), the policy in one or two sentences.
 1. Fit: the tables below.
 2. Remaining limit: at session start the human says what is left per tool. Not said: ask in one line. Do not write limits to memory.
 3. Expensive tools only where a mistake is expensive: mechanical edits, renames, simple tests go to the cheapest fitting tool or a smaller model.

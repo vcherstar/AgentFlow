@@ -2,6 +2,25 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.5.0 - 2026-10-08
+
+TypeSafe integration rebuilt from the official documentation (https://docs.typesafe.ai):
+
+- New template-owned `.agentflow/docs/typesafe.md`: links to every relevant documentation page and the rules
+  `route.py` follows; the protocol and tool routing point to it.
+- `route.py`: state is an object with named fields, clipped well under the 32k-token budget; one request asks two
+  atomic questions in parallel - choice "option" and 3-level score "complexity" - combined in code (a pick whose
+  `max_complexity` is exceeded escalates to its `escalate_to`); choice criteria are objects (`what`, `not_for`,
+  `examples`; the old `describe` still works); the policy goes into the instructions; confidence bands from the docs
+  (>= 0.9 apply, 0.5-0.9 confirm - exit 4, < 0.5 no decision - exit 3; `--threshold` removed); Jev pinned to
+  `jev-1.13.0` (`jev_model` in the options file); `TYPESAFE_BASE_URL` (the SDK's name; `TYPESAFE_API_BASE` is gone);
+  the request id also on errors.
+- Tests: the stand-in server checks the documented request shape; tests clear every `TYPESAFE_*` variable so they can
+  never reach the real service.
+
+Migration from 2.4.x: `install.py --update`; in `model-options.json` rename `describe` to `what` (optional), add
+`not_for` / `examples`, and `max_complexity` / `escalate_to` where a stronger option should take hard tasks.
+
 ## 2.4.1 - 2026-10-08
 
 - route.py prints and logs the TypeSafe usage (input and output tokens) and the request id (`x-typesafe-request-id`) of every call, so a call can be matched with the TypeSafe dashboard or support.

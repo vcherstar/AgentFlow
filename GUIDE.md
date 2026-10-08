@@ -118,7 +118,8 @@ python <AgentFlow>\.agentflow\tools\install.py . --update --dry-run and continue
 
 1. Ключ храни вне репозитория, например `E:\Projects\AgentFlow\APIs\typesafe\agentflow_api.txt`, и укажи путь переменной пользователя `AGENTFLOW_TYPESAFE_KEY_FILE`.
 2. В проекте заполни `.agentflow\docs\model-options.json`: какие инструменты и модели можно брать, что бесплатно и до какой даты (`until`), когда вернётся квота (`from`), и одной-двумя фразами — как выбирать (`policy`).
-3. Оркестратор вызывает `python .agentflow\tools\route.py T-NNN --apply`: при уверенной рекомендации в задаче появятся `Tool:` и `Model:`. Нет ключа, ошибка или низкая уверенность — выбор по обычной таблице `tool-routing.md`.
+3. Оркестратор вызывает `python .agentflow\tools\route.py T-NNN --apply`. Уверенность 0,9 и выше — в задаче появятся `Tool:` и `Model:`; от 0,5 до 0,9 — рекомендация, которую оркестратор подтверждает сам; ниже 0,5, нет ключа или ошибка — выбор по обычной таблице `tool-routing.md`. Каждый вызов печатает расход токенов и номер запроса TypeSafe.
+4. Работа с TypeSafe ведётся по официальной документации: https://docs.typesafe.ai/introduction. Краткая выжимка правил и ссылки — `.agentflow\docs\typesafe.md`.
 
 Модель можно указать и вручную строкой в задаче: `Model: swe-2-high` (Devin), `Model: gpt-6.1-sol, effort=xhigh` (Codex).
 

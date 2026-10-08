@@ -113,3 +113,11 @@ flags by the launcher; the project lists its options and a policy in `model-opti
 choice question and only advises (threshold, exit 3 otherwise; `--apply` only before launch). Rejected: letting the
 service choose silently at launch (the Orchestrator must see and own the choice); storing the key in the repository.
 
+## 2026-10-08: 2.5.0 - TypeSafe by its official documentation (human)
+
+The human asked to use the official TypeSafe documentation whenever TypeSafe is used. The 2.4 integration had been
+built from the API reference, one primitive page and a third-party summary, and differed from the docs (text state,
+one broad question, one 0.5 threshold, `jev-latest`, a proxy's variable name). Rebuilt to the docs and recorded the
+rules and links in the template-owned `docs/typesafe.md` so every project and session follows them. Rejected: keeping
+the single broad question (the docs ask for decomposition into atomic questions combined in code).
+
