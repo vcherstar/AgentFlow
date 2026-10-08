@@ -52,6 +52,7 @@ STUBS = {
     "state/decisions.md": "# Decisions\n",
     "state/known-issues.md": "# Known issues\n",
     "state/session-log.md": "# Session log\n",
+    "state/questions.md": "# Questions for the human\n\nWritten by a background Orchestrator (protocol, \"Autonomous orchestration\"); answered entries are removed.\n",
     "docs/project-plan.md": "# Roadmap\n\n## Stage 1: <name>\n\nState: current\n\nExit criteria:\n- <checkable criterion>\n",
     "docs/project-rules.md": (
         "# Project rules\n\nProject-owned; a template update never changes this file "

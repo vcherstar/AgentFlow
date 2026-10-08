@@ -209,6 +209,21 @@ Who: the Orchestrator (or the human). Per tool: Tool Routing.
    A refused launch is fixed in the Task File, not worked around.
 11. **Production is opt-in.** Every worker gets `AGENTFLOW_TARGET`: `local`, or the task's `Target` (`staging` / `prod`) for a live Tester or the Deployer; a Task File cannot override it. Project test and run configs default to local: unset or `local` never reaches staging or production. A config that can reach production by default is a defect: the Orchestrator issues a developer task to fix it before other work that runs those tests.
 
+## Section: Autonomous orchestration
+
+When the Orchestrator session ends (usage limit, closed window), work continues inside what the human already approved. Tool: `.agentflow/tools/tick.py`; state in `.agentflow/tasks/.runtime/` (not committed).
+
+1. **One Orchestrator at a time.** The Orchestrator claims the project with `python .agentflow/tools/tick.py heartbeat --holder <tool>` at its start and after every step (launch, decision, acceptance), and ends with `tick.py release --holder <tool>`. A heartbeat older than 20 minutes (`AGENTFLOW_ORCHESTRATOR_STALE_MINUTES`) means none is live. A refused heartbeat means another holder is live: read, do not act. The human's own session may take over with `--force`.
+2. **Mechanical step.** `python .agentflow/tools/tick.py run` does only what needs no judgment, through `accept.py` and `run-task.ps1` (every gate applies): accept a Tester with `Verdict: pass`; accept a Developer whose Tester is `done` or whose `Independent check` is `none`; launch a `ready` task whose dependencies are `done` and whose tool is not limited (ledger `in progress`). Everything else is a need in `tick.json`: a failed or partial verdict, `blocked` or `failed`, a dead attempt, a usage limit, a completed developer task without a Tester task, a refused acceptance or launch. While an Orchestrator is live, `run` only reports (`--even-if-live`: the live Orchestrator runs it itself). Any Orchestrator may use it instead of doing these steps by hand.
+3. **Tool limits.** `tool-limits.json` holds, per tool, when it is usable again: `tick.py run` learns it from an attempt's `limitHit` or log tail, with the reset time from the tool's message (one hour when it names none); `tick.py limit <tool> "<message>"` records one by hand, for example the Orchestrator's own limit before it stops. Launches skip a limited tool; its tasks become needs (move to a fallback tool, Recovery step 5).
+4. **Background Orchestrator.** A session started while no human is present (prompt names the holder `<tool>-background`), on the first tool of `AGENTFLOW_ORCHESTRATORS` (default `claude,codex,devin,agy`) that is not limited: `tick.py next-orchestrator`. Its limits override the role file:
+   - May: everything in Task lifecycle and Launching workers for the approved plan: launch, accept, reject by the decision table, Recovery and fallback tools, successors of rejected tasks and Tester tasks for completed developer tasks, inside the same goal and Stage exit criteria.
+   - Never: new scope, a new Stage, changes to the plan, `decisions.md` or Project rules; answering a question meant for the human; push, publish, deploy, production; deleting anything but the accepted task's worktree and branch; changing a started task's Task File above `## Result`.
+   - A step that needs the human: append to `.agentflow/state/questions.md` (date, task, question, options, what waits on it), leave that task `blocked`, continue with other work.
+   - Claim the heartbeat first; refused: exit at once. Heartbeat after every step. Its own usage limit: `tick.py limit`, release, exit, so the next tool takes over.
+   - End: commit `.agentflow/` memory and Task Files (`chore: ...`), add to `.agentflow/state/handoff.md` "Background session <tool>, <time>: <what was done, what waits>", release, exit. Nothing left that it may do: exit.
+5. **The human returns:** `python .agentflow/tools/tick.py status`, `.agentflow/state/questions.md`, the handoff; then the human's Orchestrator session claims the heartbeat. Answered questions are removed from `questions.md`, and the decision goes where it belongs.
+
 ## Section: Updating memory
 
 Who: Single Mode or the Orchestrator, after meaningful work or before ending a long session.

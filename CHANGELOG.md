@@ -2,6 +2,17 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.6.0 - 2026-10-08
+
+Orchestration survives the end of an Orchestrator session (usage limit, closed window):
+
+- New `.agentflow/tools/tick.py`: `run` takes the steps that need no judgment (accept a Tester with `Verdict: pass`, accept a Developer whose Tester is done or whose check is `none`, launch ready tasks whose dependencies are done and whose tool is not limited) through `accept.py` and `run-task.ps1`, and lists the rest as needs in `.runtime/tick.json`; `--dry-run` changes nothing. `heartbeat` / `release` keep one Orchestrator at a time (a heartbeat older than 20 minutes is not live; while one is live, `run` only reports). `limit` and `tool-limits.json` remember when a limited tool is usable again, learned from attempt logs ("resets 3:30pm", "resets in 158h43m"; one hour otherwise). `next-orchestrator` picks the first free tool of `AGENTFLOW_ORCHESTRATORS` (default `claude,codex,devin,agy`).
+- Protocol section "Autonomous orchestration": what a background Orchestrator may do (the approved plan only: launch, accept, reject, recovery, successors, Tester tasks) and may never do (new scope, plan or rule changes, push, publish, deploy, production); questions for the human go to the new `.agentflow/state/questions.md`.
+- Orchestrator role: heartbeat after every step; on its own limit it records it and releases.
+- `test_tick.py`: decisions, acceptance chains in one tick, refused acceptance, limits and reset times, heartbeat ownership.
+
+Migration from 2.5.x: `install.py --update` (creates `questions.md`).
+
 ## 2.5.3 - 2026-10-08
 
 - Fix: `accept.py` refused every acceptance once the committed memory (for example the ledger) had changed: the trimmed `git status` output lost the first line leading space, so `.agentflow/...` read as `agentflow/...` and counted as a change outside the memory. It now reads `git status --porcelain -z` raw. Tests commit the memory before acceptance, as a real main folder does, and check that a real change outside it still blocks.
