@@ -2,6 +2,14 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.4.0 - 2026-10-08
+
+- Task File line `Model: <model>[, effort=<level>]`: the launcher adds the tool's flags (codex `-m` and `-c model_reasoning_effort`, agy `--model` / `--effort`, claude and devin `--model`). New machine variables `AGENTFLOW_CLAUDE_ARGS`, `AGENTFLOW_AGY_ARGS`, `AGENTFLOW_DEVIN_ARGS`.
+- New `.agentflow/tools/route.py`: recommends the tool and model for a task with TypeSafe AI (Jev, one choice question over the project's options) and, with `--apply`, writes `Tool:` / `Model:` into a task that has not started. Options and a policy in words live in the new project-owned `.agentflow/docs/model-options.json` (with `from` / `until` windows and roles); a tester never gets the developer's tool while another option remains. The key stays outside the repository (`TYPESAFE_API_KEY` or `AGENTFLOW_TYPESAFE_KEY_FILE`) and is never printed. No key, an API error or low confidence: exit 3, decide by Tool Routing.
+- Tests: `test_route.py` against a local stand-in for the API.
+
+Migration from 2.3.0: `install.py --update` (it creates the `model-options.json` stub); fill the options and set the key variable to use `route.py`.
+
 ## 2.3.0 - 2026-10-08
 
 - Workspace mode: a folder that holds several repositories. Its root becomes a small memory repository (it tracks only AgentFlow files and the root entry points; the product repositories are ignored by it and stay independent); `.agentflow/workspace.json` lists the repositories. Task Files name them in `Repo:`; paths start with the repository folder; commits are `<repo>@<SHA>, ...` in `Change:`, `Verifies:`, `Deploys:`. One branch per task in every named repository; `Worktree` holds one worktree per repository.

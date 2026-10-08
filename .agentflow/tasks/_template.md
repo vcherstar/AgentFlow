@@ -5,6 +5,7 @@
 
 Role: developer | tester | deployer
 Tool: claude | codex | agy | devin | antigravity      <!-- ../roles/tool-routing.md -->
+Model: <model>[, effort=<level>]               <!-- optional; from docs/model-options.json or route.py; delete to use the tool's default -->
 Stage: <Stage number from .agentflow/docs/project-plan.md>
 Depends on: T-xxx | none
 Repo: <repo>[, <repo>...]                      <!-- workspace only: repositories from .agentflow/workspace.json; delete the line in a single repository -->

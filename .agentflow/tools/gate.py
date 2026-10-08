@@ -163,6 +163,16 @@ def sub_path(base, repo):
     return str(Path(base) / repo) if repo else str(base)
 
 
+def parse_model(value):
+    """`Model: <model>[, effort=<level>]` -> (model, effort); either may be None."""
+    if not value or "<" in value:  # empty, or the template placeholder left in place: the tool's default model
+        return None, None
+    parts = [x.strip() for x in value.split(",") if x.strip()]
+    model = next((x for x in parts if "=" not in x), None)
+    effort = next((x.split("=", 1)[1].strip() for x in parts if x.replace(" ", "").startswith("effort=")), None)
+    return model, effort
+
+
 def checkouts(t):
     """What run-task.ps1 creates per repository: developer worktrees on Branch, tester detached checkouts."""
     if t["role"] == "developer":
@@ -198,7 +208,7 @@ def parse(tid):
         t["env"]["PORT"] = m.group(1)
 
     role = t["role"]
-    t["model"] = field(head, "Model")
+    t["model"], t["effort"] = parse_model(field(head, "Model"))
     if role in ("tester", "deployer") and (tg := field(head, "Target")):
         if tg not in ("staging", "prod"):
             raise TaskError(f"Target '{tg}': expected staging or prod")

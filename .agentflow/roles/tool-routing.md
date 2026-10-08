@@ -6,6 +6,7 @@ This file is shared by all projects and replaced on template update: notes from 
 
 ## How to choose
 
+0. If the project has `.agentflow/docs/model-options.json` and a TypeSafe key: `python .agentflow/tools/route.py T-NNN` first; take its answer above the threshold, otherwise continue here. Keep the options file current: free windows (`until`), quotas that come back (`from`), the policy in one or two sentences.
 1. Fit: the tables below.
 2. Remaining limit: at session start the human says what is left per tool. Not said: ask in one line. Do not write limits to memory.
 3. Expensive tools only where a mistake is expensive: mechanical edits, renames, simple tests go to the cheapest fitting tool or a smaller model.
@@ -50,6 +51,7 @@ No tool left: the task is `blocked` and one line to the human. Orchestrator out 
 
 - Launch: `.agentflow/tools/run-task.ps1 T-NNN <codex|claude|agy|devin>`. Machine settings are environment variables, not script edits: `AGENTFLOW_CODEX` (codex path, `*` allowed, the newest match wins), `AGENTFLOW_CODEX_ARGS` (for example `-m <model>`), `AGENTFLOW_CLAUDE`, `AGENTFLOW_AGY`, `AGENTFLOW_DEVIN`, `AGENTFLOW_PYTHON`. Set them as user variables: the worker window gets them from the launcher (protocol, Launching workers, Machine setup).
 - Codex installed with the Codex desktop app: the CLI is not on PATH; use `%USERPROFILE%\.codex\plugins\.plugin-appserver\codex.exe` (the copy in `.codex\.sandbox-bin` lacks its helper and cannot run commands). Its tester sandbox may fail with EPERM on the npm prefix or cache, or `CreateProcessWithLogonW` error 1909: give that test to another tool.
+- Models: `Model: <model>[, effort=<level>]` in the Task File; codex `-m` and `-c model_reasoning_effort=<level>` (`minimal|low|medium|high|xhigh`), agy `--model` / `--effort`, claude and devin `--model` (Devin encodes the level in the name: `swe-2-high`, `swe-2-max`; `devin models list`). Machine-wide extra flags: `AGENTFLOW_<TOOL>_ARGS`.
 - Devin CLI: `-p` print mode; `smart` permissions refuse every tool call without a person, and a new worktree is an untrusted folder, so the launcher passes `--permission-mode dangerous --respect-workspace-trust false`. Login: `devin auth login`.
 - Antigravity CLI: a Developer runs in print mode with `--output-format stream-json`, so progress reaches the log and the window closes by itself; a Tester stays interactive (`-i`) and needs a human `/exit`. Login: run `agy` once.
 - Antigravity: the worktree must be in its trusted folders before the first run; the first run passes the setup wizard by hand once. Error 500: retry, not a task failure.

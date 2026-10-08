@@ -61,6 +61,12 @@ STUBS = {
         "- Talk to the human in <language>.\n\n"
         "## Preflight\n\n- deny: `\\bgit\\s+push\\b`\n\n"
         "## Tool routing\n\n<installed tools, their paths and limits on this machine>\n"),
+    "docs/model-options.json": (
+        '{\n  "policy": "<how to choose: what is free or has unused capacity, what is limited, testers on another tool>",\n'
+        '  "options": {\n'
+        '    "claude": {"tool": "claude", "describe": "complex multi-file work and architecture"},\n'
+        '    "codex": {"tool": "codex", "describe": "long tasks, testers (sandboxed review)"}\n'
+        '  }\n}\n'),
 }
 
 COMMANDS = ["handoff-cmd", "start-role", "start-session", "update-memory", "update-runbook"]

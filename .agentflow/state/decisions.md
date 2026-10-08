@@ -105,3 +105,11 @@ repositories; tasks name them in `Repo:`; paths are workspace-relative so Checks
 task folder; acceptance does a trial merge everywhere first. Rejected: memory without git (no history, no dashboard);
 git submodules (they change the product repositories); per-repository memory copies (two sources of truth).
 
+## 2026-10-08: 2.4.0 - per-task model and TypeSafe routing
+
+Why: the human pays for several tools with different free windows (Devin SWE-2 free until 2026-10-16, unused Codex
+capacity) and asked to use TypeSafe AI to pick the model per task. Decided: a `Model:` line per task turned into tool
+flags by the launcher; the project lists its options and a policy in `model-options.json`; `route.py` asks Jev one
+choice question and only advises (threshold, exit 3 otherwise; `--apply` only before launch). Rejected: letting the
+service choose silently at launch (the Orchestrator must see and own the choice); storing the key in the repository.
+

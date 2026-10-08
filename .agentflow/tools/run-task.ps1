@@ -18,6 +18,9 @@
     AGENTFLOW_CODEX       codex executable; wildcards allowed, the newest match wins
     AGENTFLOW_CODEX_ARGS  extra codex exec arguments, space-separated (for example: -m <model>)
     AGENTFLOW_CLAUDE, AGENTFLOW_AGY, AGENTFLOW_DEVIN   other tool executables (same rules as AGENTFLOW_CODEX)
+    AGENTFLOW_CLAUDE_ARGS, AGENTFLOW_AGY_ARGS, AGENTFLOW_DEVIN_ARGS   extra arguments for those tools
+  A Task File line `Model: <model>[, effort=<level>]` adds the tool's model and reasoning-effort flags for that task
+  (codex: -m / -c model_reasoning_effort; agy: --model / --effort; claude, devin: --model).
     AGENTFLOW_PYTHON      Python 3 executable for gate.py; default: `python` unless it is the Microsoft Store
                           stub, then `py -3`
   The worker window receives the launcher's AGENTFLOW_* variables and PATH through tasks\.runtime\T-NNN.env.json:
@@ -76,6 +79,24 @@ $Tools = @{
               args = { param($p, $r) @('-p', $p, '--permission-mode', 'dangerous', '--respect-workspace-trust', 'false') } }
 }
 
+function Get-ModelArgs([string]$tool, $t) {   # machine defaults from AGENTFLOW_<TOOL>_ARGS, then the task's Model line
+  $extra = @()
+  if ($tool -ne 'codex') {   # codex keeps AGENTFLOW_CODEX_ARGS in $Tools
+    $envArgs = [Environment]::GetEnvironmentVariable("AGENTFLOW_$($tool.ToUpper())_ARGS")
+    if ($envArgs) { $extra += $envArgs.Trim() -split '\s+' }
+  }
+  if ($t.model) {
+    $extra += $(switch ($tool) { 'codex' { '-m' } default { '--model' } }), $t.model
+  }
+  if ($t.effort) {
+    switch ($tool) {
+      'codex' { $extra += '-c', "model_reasoning_effort=$($t.effort)" }
+      'agy' { $extra += '--effort', $t.effort }
+      default { Write-Warning "$tool takes no separate effort flag; put the level in the model name (Model: $($t.model))" }
+    }
+  }
+  return ,$extra
+}
 function Now { [DateTime]::UtcNow.ToString('s') + 'Z' }
 function Invoke-Gate([string]$cmd, [string]$id, [string[]]$more = @()) {   # tools/gate.py -> object; exit 2 = gate error
   $out = Join-Path $rtDir "$id.gate.json"
@@ -221,6 +242,10 @@ if ($Worker) {
     $e = Get-WorkerEnv $t
     foreach ($k in $e.Keys) { Set-Item "env:$k" $e[$k] }
     $argv = & $spec.args $t.prompt $t.role
+    $extra = Get-ModelArgs $Tool $t
+    if ($extra.Count) {   # codex: options go after "exec"; the other tools take them anywhere
+      $argv = if ($Tool -eq 'codex') { @($argv[0]) + $extra + @($argv | Select-Object -Skip 1) } else { @($argv) + $extra }
+    }
     if ($spec.pipe) {
       & $spec.exe @argv 2>&1 | Tee-Object -FilePath $log -Append
     } else {
