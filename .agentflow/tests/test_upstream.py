@@ -76,6 +76,11 @@ class UpstreamTests(unittest.TestCase):
         r = self.run_cli("--template", str(self.template), "--project", str(self.project))
         self.assertIn("install.py --update", r.stdout)
 
+    def test_line_endings_are_not_drift(self):
+        (self.project / ".agentflow" / "tools" / "tick.py").write_bytes(b"tick v1\r\n")
+        rep = upstream.report(self.template, [self.project])
+        self.assertFalse(upstream.drifted(rep["projects"][0]))
+
     def test_project_owned_files_are_never_compared(self):
         (self.project / ".agentflow" / "state").mkdir(exist_ok=True)
         (self.project / ".agentflow" / "state" / "tasks.md").write_text("ledger\n", encoding="utf-8")

@@ -95,6 +95,11 @@ def find_projects(explicit, template, cwd=None):
     return sorted(p for p in roots if (p / ".agentflow" / "VERSION").exists() and p != template)
 
 
+def same_file(a, b):
+    """Same content once CRLF/LF is normalized: checkouts differ across machines and installs."""
+    return a.read_bytes().replace(b"\r\n", b"\n") == b.read_bytes().replace(b"\r\n", b"\n")
+
+
 def compare(tflow, pflow):
     """(differs, missing, added) template-owned files of one project against the template."""
     tfiles = template_files(tflow)
@@ -103,7 +108,7 @@ def compare(tflow, pflow):
         dst = pflow / rel
         if not dst.exists():
             missing.append(rel)
-        elif dst.read_bytes() != (tflow / rel).read_bytes():
+        elif not same_file(dst, tflow / rel):
             differs.append(rel)
     added = []
     for owned_dir in install.OWNED_DIRS:
