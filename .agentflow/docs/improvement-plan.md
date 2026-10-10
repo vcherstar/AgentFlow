@@ -13,11 +13,12 @@ Work concerns the AgentFlow template and installation workflow only.
 
 Implement in the template first, then update the WatermarkRemover instance through
 install.py --update and verify drift. Preserve project-owned settings and open tasks.
-The current human rules prohibit worktrees, secondary checkouts and delegation:
-implementation must use the primary checkout and one agent. Proposed Team Mode
-features are capabilities for installations where the human permits them, not
-authorization to use them here. Do not silently override these rules with older
-repository exceptions. No push or production deployment is included.
+On 2026-10-10 the human lifted the inherited worktree/delegation ban for AgentFlow
+projects and authorized Team Mode. The Orchestrator may assign independent worker
+sessions and isolated task/check directories through the established workflow,
+within configured resource limits. Workers do not recursively delegate. Each
+installation defines permitted checkout locations. No push or production deployment
+is included. This authorization does not itself start the planned feature work.
 
 ## Existing baseline
 
@@ -58,7 +59,7 @@ diagnosable block. Actual Task File mutations remain rejected after the merge fi
 
 Exit: a replacement receives committed, modified and new files; recovery works
 without narrative handoff; uncertain process ownership blocks concurrent writing.
-Use permitted test fixtures/process simulations without prohibited checkouts.
+Use isolated test fixtures and process simulations; report real-platform coverage separately.
 
 ### 3. Evidence and completion gate
 

@@ -2,6 +2,15 @@
 
 Decisions about the AgentFlow template itself: why, and what was rejected. What changed per version: `CHANGELOG.md`. Add new decisions below; do not delete old ones without a reason.
 
+## 2026-10-10: Human authorizes managed Team Mode
+
+The human explicitly removed an inherited single-agent/no-worktree restriction
+from an older project. AgentFlow projects may use orchestrated worker sessions,
+parallel independent tasks and isolated task/test checkouts in configured locations.
+Keep resource caps, file ownership and independent acceptance; workers do not
+recursively delegate. Global Codex instructions and the pilot's project rules were
+aligned. This changes local operating policy, not the released template runtime.
+
 ## 2026-05-21
 
 ### AI Project Memory
