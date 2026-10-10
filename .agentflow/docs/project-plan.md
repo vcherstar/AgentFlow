@@ -18,12 +18,20 @@ Exit criteria: roles, Task Files, ledger, launcher with preflight work on a live
 
 ### Stage 2. 2.0.0: enforcement, states, template vs project
 
-Status: current.
+Status: closed.
 
 Exit criteria: P0-P4 of the FPF audit committed; sandbox checks pass; the branch is merged by the human.
 
 ### Stage 3. Pilot 2.0.0
 
-Status: planned.
+Status: closed (Watermark Remover, 2.2.x-2.11.0, 48+ tasks).
 
 Exit criteria: one real project updated with the "Update" procedure and a full task cycle run with the real tools; findings in `state/known-issues.md`.
+
+### Stage 4. Upstream sync
+
+Status: current.
+
+Exit criteria: `upstream.py` drift reports from every installed project are reviewed periodically;
+changes that flow upstream are generalized, released (CHANGELOG, VERSION, decisions.md) and rolled
+out with `install.py --update`.

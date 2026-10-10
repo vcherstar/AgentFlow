@@ -2,7 +2,7 @@
 
 ## As of
 
-2026-10-03, branch `refactor/fpf-audit` (not merged into main).
+2026-10-10, `main` @ 479c107 - AgentFlow 2.11.0.
 
 ## Goal
 
@@ -10,8 +10,10 @@ Keep AgentFlow small while its rules are enforced by the tools, not only written
 
 ## Verified state
 
-- 2.0.0 refactor done in five commits on `refactor/fpf-audit` (P0-P4); see `CHANGELOG.md`.
-- Launcher, gate, and ledger checked in a throwaway sandbox repository: launch gate, `-Manual`, review isolation, end check, verify, ledger transitions, Stage check (all passed). Not yet run with the real codex / claude / agy CLIs.
+- 2.11.0 merged: `machine_capacity.py` (shared tool slots, PORTs and limit resets across projects on
+  one machine), `route.py` effort question (`efforts` / `model_by_effort`), `upstream.py` template
+  drift report + `template-source.json` + the conductor's daily check. 93 tests pass.
+- Watermark Remover updated to 2.11.0 via `install.py --update`; `upstream.py --check` is clean.
 
 ## Assumptions
 
@@ -20,6 +22,7 @@ Keep AgentFlow small while its rules are enforced by the tools, not only written
 ## Open problems
 
 - See `state/known-issues.md`.
+- `origin/main` is behind; push only on the human's word.
 
 ## Files to read first
 
