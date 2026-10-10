@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paths import FLOW_ROOT  # noqa: E402
 import gate  # noqa: E402
+import machine_capacity  # noqa: E402
 
 TOOLS = FLOW_ROOT / "tools"
 RT = FLOW_ROOT / "tasks" / ".runtime"
@@ -35,7 +36,16 @@ LIMITS = RT / "tool-limits.json"
 TICK = RT / "tick.json"
 LOCK = RT / "tick.lock"
 LAUNCHABLE = ("codex", "claude", "agy", "devin")
-LIMIT_RE = re.compile(r"usage limit|rate limit|quota|session limit|hit your limit|out of credits", re.I)
+# A tool can be temporarily unusable because its quota is exhausted or because
+# account access is disabled. Both cases must hand orchestration to the next
+# configured tool. With no reset time in the message record_limit() retries the
+# preferred tool after one hour instead of removing it from the configured list.
+LIMIT_RE = re.compile(
+    r"usage limit|rate limit|quota|session limit|hit your limit|out of credits|"
+    r"disabled[^\r\n]*subscription access|subscription access[^\r\n]*disabled|"
+    r"ask your admin to enable access",
+    re.I,
+)
 
 
 def orchestrators():
@@ -92,20 +102,30 @@ def parse_reset(text, at=None):
 
 def record_limit(tool, text, at=None, seen=None):
     lim = read(LIMITS, {})
-    lim[tool] = {"until": iso(parse_reset(text, at)), "reason": " ".join(text.split())[-200:], "at": iso(at or now())}
+    until = parse_reset(text, at)
+    lim[tool] = {"until": iso(until), "reason": " ".join(text.split())[-200:], "at": iso(at or now())}
     if seen:
         lim.setdefault("_seen", {})[seen] = iso(at or now())
     write(LIMITS, lim)
+    machine_capacity.record_limit(tool, until)
     return lim[tool]
 
 
+def limit_end(tool):
+    local = read(LIMITS, {}).get(tool)
+    local_end = parse_iso(local["until"]) if local else None
+    global_end = machine_capacity.limit_until(tool)
+    return max((end for end in (local_end, global_end) if end), default=None)
+
+
 def limited(tool, at=None):
-    entry = read(LIMITS, {}).get(tool)
-    return bool(entry) and parse_iso(entry["until"]) > (at or now())
+    end = limit_end(tool)
+    return bool(end) and end > (at or now())
 
 
-def next_orchestrator(at=None):
-    return next((t for t in orchestrators() if not limited(t, at)), "")
+def next_orchestrator(at=None, skip=()):
+    return next((t for t in orchestrators() if t not in skip and not limited(t, at)
+                 and machine_capacity.has_capacity(t, FLOW_ROOT.parent, at)), "")
 
 
 # --- heartbeat ---------------------------------------------------------------------------------------------------
@@ -216,7 +236,7 @@ def decide(rows, at=None):
             elif tool not in LAUNCHABLE:
                 out.append((tid, "need", f"Tool '{tool}' cannot be started automatically: route it or start it by hand"))
             elif limited(tool, at):
-                out.append((tid, "need", f"its tool {tool} is limited until {read(LIMITS, {})[tool]['until']}: move it to another tool or wait"))
+                out.append((tid, "need", f"its tool {tool} is limited until {iso(limit_end(tool))}: move it to another tool or wait"))
             else:
                 out.append((tid, "launch", tool))
             continue
@@ -320,7 +340,7 @@ def run(dry=False, even_if_live=False, accept=do_accept, launch=do_launch):
             for tid, a, tool in decide(rows):
                 if a == "launch":
                     ok, msg = launch(tid, tool)
-                    if not ok and "running session(s) on this machine" in msg:  # project rule parallel: wait for a slot
+                    if not ok and ("running session(s) on this machine" in msg or "machine capacity wait:" in msg):
                         busy.append({"task": tid, "detail": f"{tool} has no free slot (project rule parallel)"})
                         continue
                     (acted if ok else failed).append({"task": tid, "action": "launch", "detail": msg if ok else f"launch refused: {msg}"})
@@ -354,7 +374,8 @@ def main():
     hp.add_argument("--force", action="store_true", help="take over from another live holder (the human's session)")
     sub.add_parser("release").add_argument("--holder", help="release only if this holder has it")
     sub.add_parser("status")
-    sub.add_parser("next-orchestrator")
+    no = sub.add_parser("next-orchestrator")
+    no.add_argument("--skip", default="", help="comma-separated tools whose atomic claim just lost a race")
     lp = sub.add_parser("limit")
     lp.add_argument("tool")
     lp.add_argument("text")
@@ -396,7 +417,7 @@ def main():
                 print(f"limited: {k} until {v['until']} - {v['reason'][-80:]}")
         return 0 if hb else 1
     if a.cmd == "next-orchestrator":
-        print(next_orchestrator())
+        print(next_orchestrator(skip={x for x in a.skip.split(",") if x}))
         return 0
     if a.cmd == "limit":
         e = record_limit(a.tool, a.text)

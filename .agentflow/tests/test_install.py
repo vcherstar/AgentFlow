@@ -2,11 +2,13 @@
 import contextlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 FLOW = Path(__file__).resolve().parents[1]
 TEMPLATE = FLOW.parent
@@ -24,6 +26,9 @@ def sh(cwd, *cmd):
 class InstallTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.machine_env = patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name})
+        self.machine_env.start()
+        self.addCleanup(self.machine_env.stop)
         self.repo = Path(self.tmp.name) / "project"
         self.repo.mkdir()
         sh(self.repo, "git", "init", "-q", "-b", "master")
@@ -140,6 +145,9 @@ class WorkspaceInstallTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.machine_env = patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name})
+        self.machine_env.start()
+        self.addCleanup(self.machine_env.stop)
         self.ws = Path(self.tmp.name) / "workspace"
         for name in ("api", "web"):
             r = self.ws / name

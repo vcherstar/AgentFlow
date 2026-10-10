@@ -176,3 +176,14 @@ sandbox account, Windows locked it and the user's own account (lockout policy, e
 their environment. Parallelism is a machine fact, so it is a project Preflight rule `- parallel: <tool>=<n>`, checked
 at every launch (also by tick.py and the conductor, which wait for a free slot). The default project rules ship
 `codex=1`. Rejected: a global AgentFlow constant (other machines and tools differ).
+
+## 2026-10-10: 2.11.0 - Shared machine capacity, effort routing, upstream sync (human)
+
+Running two AgentFlow projects on one machine showed three gaps. Each project thought a Codex slot was free on its
+own; `machine_capacity.py` now keeps an OS-locked lease registry shared per OS account (tool slots, worker PORTs,
+limit reset times; pending-claim handoff and dead-PID cleanup). Jev routing picked a tool but not how hard it should
+think; a third question plus `efforts`/`model_by_effort` maps a generic tier to the concrete CLI value. And
+improvements made inside a project never flowed back to the template: `upstream.py` reports drift in both
+directions, `template-source.json` remembers where an install came from, the conductor checks once a day, and a
+change is generalized before it enters the template. Rejected: a central service (an OS file lock is enough at this
+scale); auto-merging project diffs upstream (generalization is a judgment — the human reviews candidates).

@@ -17,17 +17,21 @@ uses or changes this integration works from the official documentation, not from
 ## Rules from the documentation that route.py follows
 
 1. Jev makes fast, atomic, typed judgments; it is not for extended reasoning. Decompose: several narrow questions in
-   one request (they run in parallel), combined by deterministic code. route.py asks a choice "option" (which project
-   option fits) and a 3-level score "complexity", and escalates a pick whose `max_complexity` is exceeded to its
-   `escalate_to` option.
+   one request (they run in parallel), combined by deterministic code. route.py asks which tool/model family fits,
+   which generic reasoning effort the task needs, and a 3-level "complexity" score. Code maps the chosen effort to
+   the closest level that the selected model supports (preferring the stronger level on a tie), and escalates a pick
+   whose `max_complexity` is exceeded to its `escalate_to` option.
 2. State is an object with named fields and only what the decision needs (the task's title, role, goal, acceptance
    criteria, allowed files, checks, repositories); questions and policy stay out of the state. The state budget is
    32k tokens (64k per request): long fields are clipped. English gives the best accuracy (Task Files are English).
-3. Choice criteria are objects: `what`, `not_for`, `examples` draw the boundary between options. Write them in
-   `model-options.json`; the project policy goes into the question's instructions.
-4. Confidence: `(p_max - 1/n) / (1 - 1/n)` for a choice. Bands: >= 0.9 act automatically (`--apply`), 0.5-0.9 a
-   recommendation the Orchestrator confirms, < 0.5 no decision (tool-routing.md decides). The docs say to start
-   conservative and calibrate on your own results: keep `T-NNN.route.json` and compare it with how tasks went.
+3. Choice criteria are objects: `what`, `not_for`, `examples`, supported effort levels, cost, latency, and context draw
+   the boundary between options. Write them in `model-options.json`; the project policy goes into the question's
+   instructions. Use `model` + `efforts` when the CLI takes a separate effort flag. Use `model_by_effort` when the
+   effort is part of the concrete model id, as with Devin and the installed Antigravity CLI.
+4. Confidence: `(p_max - 1/n) / (1 - 1/n)` for a choice. For a model with selectable effort, routing confidence is
+   the lower of the model and effort confidences. Bands: >= 0.9 act automatically (`--apply`), 0.5-0.9 a recommendation
+   the Orchestrator confirms, < 0.5 no decision (tool-routing.md decides). The docs say to start conservative and
+   calibrate on your own results: keep `T-NNN.route.json` and compare it with how tasks went.
 5. Pin the Jev version you calibrated on (`jev_model` in `model-options.json`, default `jev-1.13.0`); move to a new
    version on purpose, re-checking the bands.
 6. Every call records Jev's version, token usage and `x-typesafe-request-id`; quote the request id to TypeSafe support.

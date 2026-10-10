@@ -25,6 +25,7 @@
   settings: AGENTFLOW_<TOOL> (executable), AGENTFLOW_ORCHESTRATOR_<TOOL>_ARGS (arguments for an Orchestrator session;
   default AGENTFLOW_<TOOL>_ARGS), AGENTFLOW_ORCHESTRATORS, AGENTFLOW_PYTHON.
   State: tasks\.runtime\conductor.json; session logs tasks\.runtime\orchestrator.<n>.log.
+  Background Orchestrator sessions share machine_capacity.py tool slots with workers from every updated project.
 #>
 param(
   [double]$IntervalMinutes = 3,
@@ -38,9 +39,13 @@ $ErrorActionPreference = 'Stop'
 $flowRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $root = (Resolve-Path (Join-Path $flowRoot '..')).Path
 $rtDir = Join-Path $flowRoot 'tasks\.runtime'
+$machine = Join-Path $PSScriptRoot 'machine_capacity.py'
 $stateFile = Join-Path $rtDir 'conductor.json'
 $questions = Join-Path $flowRoot 'state\questions.md'
-$limitPattern = 'usage limit|rate limit|quota|session limit|hit your limit|out of credits'
+# Keep the configured tool order intact. Account-level access failures use the
+# same temporary-unavailability path as quotas, so the next tool takes over now
+# and the preferred tool is retried after the recorded reset/backoff time.
+$limitPattern = 'usage limit|rate limit|quota|session limit|hit your limit|out of credits|disabled[^\r\n]*subscription access|subscription access[^\r\n]*disabled|ask your admin to enable access'
 New-Item -ItemType Directory -Force $rtDir | Out-Null
 $env:PYTHONUTF8 = '1'
 [Console]::OutputEncoding = $OutputEncoding = [Text.UTF8Encoding]::new($false)   # tick.py prints UTF-8
@@ -65,6 +70,15 @@ $python = @(if ($env:AGENTFLOW_PYTHON) { Resolve-Exe 'python' $env:AGENTFLOW_PYT
 function Invoke-Tick([string[]]$a) {
   $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
   & $py @pyArgs (Join-Path $flowRoot 'tools\tick.py') @a
+}
+function Invoke-Machine([string[]]$argv) {
+  $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
+  $reply = & $py @pyArgs $machine @argv 2>&1
+  return [pscustomobject]@{ code = $LASTEXITCODE; text = (@($reply) -join "`n").Trim() }
+}
+function Invoke-Upstream([string[]]$argv) {
+  $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
+  & $py @pyArgs (Join-Path $flowRoot 'tools\upstream.py') @argv
 }
 function Now { [DateTime]::UtcNow.ToString('s') + 'Z' }
 function Get-Utc($t) {   # pwsh 7 ConvertFrom-Json already turns "...Z" into a DateTime; re-parsing its text shifts the zone
@@ -136,6 +150,11 @@ if ($Orchestrate) {
     "The conductor started you because no Orchestrator was live; the open needs are in .agentflow/tasks/.runtime/tick.json."
   $code = 1
   try {
+    if ($s.session.machineLease) {
+      $started = [long](Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
+      $activation = Invoke-Machine @('activate', $s.session.machineLease, "$PID", '--pid-start', "$started")
+      if ($activation.code) { throw "machine capacity activation failed: $($activation.text)" }
+    }
     Set-Location -LiteralPath $root
     $exe = Resolve-Exe $Orchestrate ([Environment]::GetEnvironmentVariable("AGENTFLOW_$($Orchestrate.ToUpper())"))
     $argv = Get-OrchestratorArgv $Orchestrate $prompt
@@ -149,17 +168,25 @@ if ($Orchestrate) {
   $s = Read-State
   Set-Prop $s.session 'exitCode' $code; Set-Prop $s.session 'limitHit' $limit; Set-Prop $s.session 'finishedAt' (Now)
   Write-State $s
+  if ($s.session.machineLease) { [void](Invoke-Machine @('release', $s.session.machineLease)) }
   Write-Host "`nbackground Orchestrator ($Orchestrate) finished, exit $code$(if ($limit) { ', usage limit' })."
   return   # the window closes here
 }
 
 function Start-Orchestrator([string]$tool, $state, [string]$why) {
+  $launcherStart = [long](Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
+  $claim = Invoke-Machine @('claim', $tool, $root, 'orchestrator', '--pid', "$PID", '--pid-start', "$launcherStart")
+  if ($claim.code -eq 4) { Write-Host "  waiting for shared machine capacity: $($claim.text)"; return $null }
+  if ($claim.code) { throw "machine capacity failed: $($claim.text)" }
+  $leaseToken = $claim.text
+  try {
   $n = [int]($state.sessions) + 1
   $handover = [ordered]@{ PATH = $env:PATH }
   Get-ChildItem env: | Where-Object { $_.Name -like 'AGENTFLOW_*' } | ForEach-Object { $handover[$_.Name] = $_.Value }
   [IO.File]::WriteAllText((Join-Path $rtDir 'conductor.env.json'), ($handover | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
   $session = [pscustomobject][ordered]@{ n = $n; tool = $tool; pid = $null; pidStart = $null; startedAt = (Now)
-    finishedAt = $null; exitCode = $null; limitHit = $false; log = (Join-Path $rtDir "orchestrator.$n.log"); why = $why }
+    finishedAt = $null; exitCode = $null; limitHit = $false; log = (Join-Path $rtDir "orchestrator.$n.log")
+    machineLease = $leaseToken; why = $why }
   Set-Prop $state 'session' $session; Set-Prop $state 'sessions' $n
   Write-State $state
   $ps = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
@@ -171,6 +198,10 @@ function Start-Orchestrator([string]$tool, $state, [string]$why) {
     Write-State $state
   }
   return $state
+  } catch {
+    [void](Invoke-Machine @('release', $leaseToken))
+    throw
+  }
 }
 
 # --- one conductor per project: a second one (the logon task, another window) exits at once. The name is shared with
@@ -201,6 +232,7 @@ while ($true) {
     } else {
       if ($s -and -not $s.finishedAt -and -not $DryRun) {   # window closed without a final state
         Set-Prop $s 'finishedAt' (Now); Set-Prop $s 'exitCode' -1; Set-Prop $state 'reportedFinish' $s.n; Write-State $state
+        if ($s.machineLease) { [void](Invoke-Machine @('release', $s.machineLease)) }
         Invoke-Tick @('release', '--holder', "$($s.tool)-background") | Out-Null
       }
       $tickArgs = @('run', '--json') + $(if ($DryRun) { @('--dry-run') } else { @() })
@@ -224,16 +256,26 @@ while ($true) {
           } elseif (-not $tool) {
             if ($state.allLimitedKey -ne $key) {
               $lim = @($rep.limited.PSObject.Properties | ForEach-Object { "$($_.Name) until $($_.Value)" }) -join ', '
-              Send-Notice 'AgentFlow: all tools limited' "No Orchestrator tool is free. $lim"
+              $reason = if ($lim) { "No Orchestrator tool is free. $lim" } else { 'Orchestrator tools are busy in other AgentFlow projects; retry next round' }
+              Send-Notice 'AgentFlow: all tools limited' $reason
               if (-not $DryRun) { Set-Prop $state 'allLimitedKey' $key; Write-State $state }
             }
           } elseif ($DryRun) {
             Write-Host "  would start a background Orchestrator on $tool for $($needs.Count) need(s)"
           } else {
             $why = ($needs | Select-Object -First 3 | ForEach-Object { "$($_.task): $($_.detail)" }) -join '; '
-            $state = Start-Orchestrator $tool $state $why
-            Set-Prop $state 'needsKey' $key; Write-State $state
-            Send-Notice 'AgentFlow: Orchestrator handed over' "$tool took over $($needs.Count) step(s): $why"
+            $tried = @()
+            while ($tool -and $tried.Count -lt 4 -and $tool -notin $tried) {
+              $started = Start-Orchestrator $tool $state $why
+              if ($started) {
+                $state = $started
+                Set-Prop $state 'needsKey' $key; Write-State $state
+                Send-Notice 'AgentFlow: Orchestrator handed over' "$tool took over $($needs.Count) step(s): $why"
+                break
+              }
+              $tried += $tool
+              $tool = ((Invoke-Tick @('next-orchestrator', '--skip', ($tried -join ','))) -join '').Trim()
+            }
           }
         }
       }
@@ -245,6 +287,18 @@ while ($true) {
         Send-Notice 'AgentFlow: a question for you' 'New entry in .agentflow/state/questions.md'
       }
       if ($state.questionsHash -ne $qh) { Set-Prop $state 'questionsHash' $qh; Write-State $state }
+    }
+    if (-not $DryRun) {   # once a day: does this project drift from its recorded template?
+      $today = [DateTime]::UtcNow.ToString('yyyy-MM-dd')
+      $state = Read-State
+      if ($state.upstreamCheck -ne $today -and (Test-Path (Join-Path $flowRoot 'template-source.json')) -and
+          (Test-Path (Join-Path $flowRoot 'tools\upstream.py'))) {
+        Set-Prop $state 'upstreamCheck' $today; Write-State $state
+        Invoke-Upstream @('--check', '--project', $root) | Out-Null
+        if ($LASTEXITCODE -eq 1) {
+          Send-Notice 'AgentFlow: template drift' 'This project differs from its AgentFlow template; run .agentflow\tools\upstream.py for the report'
+        }
+      }
     }
     if (-not $DryRun) {   # the panel shows when the conductor last looked
       $state = Read-State

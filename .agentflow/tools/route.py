@@ -1,4 +1,4 @@
-"""Recommend the tool and model for one task with TypeSafe AI (Jev), from the project's own list of options.
+"""Recommend the tool, model and reasoning effort for one task with TypeSafe AI (Jev).
 
   python .agentflow/tools/route.py T-007              # print the recommendation
   python .agentflow/tools/route.py T-007 --apply      # write Tool: / Model: into a task that has not started (high band)
@@ -6,8 +6,8 @@
 Built to the TypeSafe documentation (https://docs.typesafe.ai, summary in .agentflow/docs/typesafe.md); read it
 before changing this file:
 - state is an object with named fields, only what the decision needs, clipped well under the 32k-token state budget;
-- one request asks two atomic questions in parallel - a choice "option" (intent routing) and a 3-level score
-  "complexity" - and code combines them: a pick whose `max_complexity` is exceeded escalates to its `escalate_to`;
+- one request asks three atomic questions in parallel - choices "option" (tool/model family) and "effort", plus a
+  3-level score "complexity" - and code combines them deterministically;
 - options are object criteria (`what`, `not_for`, `examples`), the project policy goes into the instructions;
 - confidence bands: >= 0.9 act (`--apply` writes the task), 0.5-0.9 recommendation for the Orchestrator to confirm,
   < 0.5 no decision (decide by tool-routing.md); the Jev version is pinned (`jev_model` in the options file).
@@ -16,7 +16,9 @@ Options: `.agentflow/docs/model-options.json` (project-owned):
 
   {"policy": "how to choose, in words (cost, free windows, independence)",
    "jev_model": "jev-1.13.0",
-   "options": {"<id>": {"tool": "codex|claude|agy|devin", "model": "...", "effort": "...",
+   "options": {"<id>": {"tool": "codex|claude|agy|devin", "model": "...",
+                        "efforts": ["low", "medium", "high"],
+                        "model_by_effort": {"low": "model-low", "high": "model-high"},
                         "what": "what it is good at", "not_for": "what to keep away from it", "examples": ["..."],
                         "roles": ["developer", "tester"], "from": "YYYY-MM-DD", "until": "YYYY-MM-DD",
                         "max_complexity": 0|1|2, "escalate_to": "<id>"}}}
@@ -56,6 +58,21 @@ COMPLEXITY = [
     {"summary": "Hard", "signals": "cross-cutting or architectural change, unfamiliar APIs, concurrency, security, "
                                    "subtle edge cases, or many interacting parts"},
 ]
+EFFORT_ORDER = ["low", "medium", "high", "xhigh", "max", "ultra"]
+EFFORT = {
+    "low": {"what": "Light reasoning for quick, mechanical, low-risk work with clear steps",
+            "examples": ["rename a field", "adjust one setting", "run a known check"]},
+    "medium": {"what": "Normal reasoning for a clear, scoped implementation using familiar patterns",
+               "examples": ["fix a contained bug", "add a small feature with tests"]},
+    "high": {"what": "Deep reasoning for non-trivial debugging, several interacting files, or careful testing",
+             "examples": ["trace a state bug", "change a feature across UI and backend"]},
+    "xhigh": {"what": "Extra-high reasoning for ambiguous, cross-cutting, risky, or unfamiliar work",
+              "examples": ["redesign a subsystem", "debug a subtle integration failure"]},
+    "max": {"what": "Maximum reasoning for the hardest long-horizon work, security, or concurrency",
+            "examples": ["resolve a systemic race", "plan and implement a risky migration"]},
+    "ultra": {"what": "Ultra-high reasoning for exceptional tasks where exhaustive analysis is worth the cost",
+              "examples": ["investigate a critical failure with several plausible root causes"]},
+}
 
 
 class NoDecision(Exception):
@@ -89,8 +106,16 @@ def criterion(o):
         c["not_for"] = o["not_for"]
     if o.get("examples"):
         c["examples"] = o["examples"]
-    c["runs_on"] = o.get("tool") + (f" with model {o['model']}" if o.get("model") else "") \
-        + (f", {o['effort']} reasoning effort" if o.get("effort") else "")
+    models = o.get("model_by_effort") or {}
+    c["runs_on"] = o.get("tool") + (f" with model {o['model']}" if o.get("model") else "")
+    if models:
+        c["model_family"] = models
+    efforts = supported_efforts(o)
+    if efforts:
+        c["supported_efforts"] = efforts
+    for fact in ("cost", "latency", "context"):
+        if o.get(fact):
+            c[fact] = o[fact]
     if o.get("until"):
         c["available_until"] = o["until"]
     return c
@@ -101,7 +126,7 @@ def clip(text, n):
     return text if len(text) <= n else text[:n - 1] + "…"
 
 
-def task_state(t, text):
+def task_state(t, text, routing_date=None):
     """Only what the decision needs, as named fields (docs: State)."""
     title = text.splitlines()[0].lstrip("# ").strip() if text else t["id"]
     task = {"id": t["id"], "title": clip(title, 200), "role": t["role"],
@@ -110,7 +135,7 @@ def task_state(t, text):
             "allowed_files": t["allowed"][:40], "checks": [clip(c, 200) for c in t["checks"][:20]]}
     if t.get("repos") and t["repos"] != [""]:
         task["repositories"] = t["repos"]
-    return {"task": task}
+    return {"routing_date": routing_date or date.today().isoformat(), "task": task}
 
 
 def questions(options, policy):
@@ -123,6 +148,11 @@ def questions(options, policy):
         "complexity": {"type": "score",
                        "instructions": "How hard is this task for a capable software engineer?",
                        "criteria": COMPLEXITY},
+        "effort": {"type": "choice",
+                   "instructions": {"question": "How much reasoning effort does this task require?",
+                                    "note": "Judge the task itself. Code maps this tier to the selected model's "
+                                            "supported effort; prefer the cheaper tier when two are sufficient."},
+                   "criteria": EFFORT},
     }
 
 
@@ -150,7 +180,7 @@ def ask(state, qs, key, jev_model, opener=urllib.request.urlopen, tries=3):
 
 
 def combine(options, answers):
-    """Deterministic rule over the two answers (docs: How to build - combine independent answers in code)."""
+    """Deterministic rule over independent answers (docs: How to build - combine in code)."""
     opt, cx = answers["option"], answers.get("complexity", {})
     pick, note = opt.get("choice"), None
     o = options.get(pick, {})
@@ -164,6 +194,37 @@ def combine(options, answers):
         else:
             note = f"complexity {score:.2f} is above {pick}'s max_complexity {limit}, and no escalate_to is available"
     return pick, note
+
+
+def supported_efforts(option):
+    """Return effort tiers in canonical order; model_by_effort keys are concrete CLI variants."""
+    values = option.get("efforts") or list((option.get("model_by_effort") or {}).keys())
+    return [x for x in EFFORT_ORDER if x in values] + [x for x in values if x not in EFFORT_ORDER]
+
+
+def nearest_effort(selected, supported):
+    """Map a generic Jev tier to a model's closest tier, preferring more reasoning on an equal distance."""
+    if not supported:
+        return None
+    if selected in supported:
+        return selected
+    selected_i = EFFORT_ORDER.index(selected) if selected in EFFORT_ORDER else EFFORT_ORDER.index("medium")
+    ranked = [(abs(EFFORT_ORDER.index(x) - selected_i), -EFFORT_ORDER.index(x), x)
+              for x in supported if x in EFFORT_ORDER]
+    return min(ranked)[2] if ranked else supported[0]
+
+
+def resolve_option(option, selected_effort):
+    """Resolve the family and generic effort into flags that the selected CLI actually accepts."""
+    supported = supported_efforts(option)
+    if not supported:
+        return option.get("model"), option.get("effort"), None
+    requested = selected_effort or option.get("default_effort") or "medium"
+    resolved = nearest_effort(requested, supported)
+    by_effort = option.get("model_by_effort") or {}
+    model = by_effort.get(resolved, option.get("model"))
+    effort = None if by_effort or option.get("effort_in_model") else resolved
+    return model, effort, resolved
 
 
 def band(conf):
@@ -194,21 +255,32 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
     opts = available(cfg.get("options", {}), t["role"], avoid, today)
     if not opts:
         raise NoDecision(f"no option is available today for a {t['role']} task")
-    answers, meta = ask(task_state(t, text), questions(opts, cfg.get("policy", "")), api_key(),
+    answers, meta = ask(task_state(t, text, today), questions(opts, cfg.get("policy", "")), api_key(),
                         cfg.get("jev_model", JEV_MODEL), opener)
     opt, cx = answers["option"], answers.get("complexity", {})
-    conf = float(opt.get("confidence", 0))
+    effort_answer = answers.get("effort", {})
+    option_conf = float(opt.get("confidence", 0))
     probs = sorted(opt.get("probabilities", {}).items(), key=lambda kv: -kv[1])
     margin = probs[0][1] / probs[1][1] if len(probs) > 1 and probs[1][1] else None
     pick, note = combine(opts, answers)
     o = opts.get(pick, {})
+    needs_effort = bool(supported_efforts(o))
+    effort_conf = float(effort_answer.get("confidence", 0)) if needs_effort else None
+    selected_effort = effort_answer.get("choice") if needs_effort else None
+    model, task_effort, resolved_effort = resolve_option(o, selected_effort)
+    conf = min(option_conf, effort_conf) if effort_conf is not None else option_conf
     rec = {"task": tid, "at": date.today().isoformat(), **meta, "jevChoice": opt.get("choice"), "choice": pick,
-           "confidence": conf, "band": band(conf), "probabilities": dict(probs), "complexity": cx.get("score"),
+           "confidence": conf, "optionConfidence": option_conf, "band": band(conf),
+           "probabilities": dict(probs), "complexity": cx.get("score"),
            "complexityConfidence": cx.get("confidence"), "escalation": note,
-           "tool": o.get("tool"), "model": o.get("model"), "effort": o.get("effort"), "applied": False}
+           "jevEffort": selected_effort, "effortConfidence": effort_conf, "resolvedEffort": resolved_effort,
+           "tool": o.get("tool"), "model": model, "effort": task_effort, "applied": False}
     print(f"{tid}: {pick} -> Tool: {o.get('tool')}"
-          + (f", Model: {o['model']}" + (f", effort={o['effort']}" if o.get("effort") else "") if o.get("model") else ""))
-    print(f"  option confidence {conf:.2f} ({band(conf)})" + (f", top/second {margin:.1f}x" if margin else "")
+          + (f", Model: {model}" + (f", effort={task_effort}" if task_effort else "") if model else ""))
+    effort_text = (f"; effort {selected_effort} -> {resolved_effort} (confidence {effort_conf:.2f})"
+                   if effort_conf is not None else "")
+    print(f"  option confidence {option_conf:.2f}" + (f", top/second {margin:.1f}x" if margin else "")
+          + effort_text + f"; overall {conf:.2f} ({band(conf)})"
           + f"; complexity {float(cx.get('score', 0)):.2f} of 2 (confidence {float(cx.get('confidence', 0)):.2f})")
     for k, v in probs[:5]:
         print(f"  {v:.2f}  {k}")
@@ -229,7 +301,7 @@ def route(tid, apply=False, opener=urllib.request.urlopen, today=None):
         status = gate.ledger_rows().get(tid, {}).get("Status")
         if status not in (None, "", "ready", "blocked"):
             raise NoDecision(f"{tid} is '{status}': --apply changes only a task that has not started")
-        set_header(t["file"], o["tool"], o.get("model"), o.get("effort"))
+        set_header(t["file"], o["tool"], model, task_effort)
         if status:
             subprocess.run([sys.executable, str(FLOW_ROOT / "tools" / "ledger.py"), "set", tid, "--tool", o["tool"]],
                            check=True, capture_output=True)
