@@ -323,7 +323,7 @@ if ((Test-Path $lockPath) -and ((Get-Date) - (Get-Item $lockPath).LastWriteTime)
 }
 try { $lock = [IO.File]::Open($lockPath, 'CreateNew', 'Write', 'None') }
 catch { throw "another run-task.ps1 launch is in progress ($lockPath). Wait and check -Status." }
-$leaseToken = $null; $workerStarted = $false
+$leaseToken = $null; $workerStarted = $false; $a = $null
 try {
   $rt = Read-Rt $TaskId; $prev = Get-Last $rt
   if (Test-Held $prev) {
@@ -335,7 +335,8 @@ try {
   }
   $live = @(Get-ChildItem $rtDir -Filter 'T-*.json' | Where-Object { $_.Name -match '^T-\d+\.json$' } | ForEach-Object {
     $o = Get-Content $_.FullName -Raw | ConvertFrom-Json; if (Test-Held (Get-Last $o)) { $o.taskId } })
-  $pf = Invoke-Gate preflight $TaskId (@('--live', ($live -join ',')) + $(if ($Manual) { @('--manual') } else { @('--tool', $Tool) }))
+  $liveArgs = @(if ($live.Count) { '--live'; ($live -join ',') })
+  $pf = Invoke-Gate preflight $TaskId ($liveArgs + $(if ($Manual) { @('--manual') } else { @('--tool', $Tool) }))
   if (-not $pf.ok) {
     throw "$TaskId preflight failed, nothing was created:`n  - $($pf.problems -join "`n  - ")`nFix the Task File (or the project Preflight rules) and launch again."
   }
@@ -363,6 +364,11 @@ try {
   $rt.attempts = @($rt.attempts) + $a
   Write-Rt $TaskId $rt   # running attempt = lock for the worker's lifetime
 
+  # Record issuance before handing control to a worker, including direct and -Manual launches.
+  $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
+  $ledgerReply = & $py @pyArgs (Join-Path $flowRoot 'tools\ledger.py') set $TaskId --status 'in progress' 2>&1
+  if ($LASTEXITCODE) { throw "ledger refused launch of ${TaskId}: $ledgerReply" }
+
   if ($Manual) {
     $e = Get-WorkerEnv $t
     Write-Host "$TaskId attempt $n ready for a manual start.`n  folder: $($t.workdir)`n  env:    $(@($e.Keys | ForEach-Object { "$_=$($e[$_])" }) -join ', ')`n  prompt: $($t.prompt)`nWhen it ends: .agentflow\tools\run-task.ps1 $TaskId -MarkFinished"
@@ -373,7 +379,7 @@ try {
     ForEach-Object { $handover[$_.Name] = $_.Value }   # the task sets TARGET and EVIDENCE itself
   [IO.File]::WriteAllText((Join-Path $rtDir "$TaskId.env.json"), ($handover | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
   $ps = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
-  $p = Start-Process $ps -PassThru -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass',
+  $p = Start-Process $ps -WindowStyle Hidden -PassThru -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass',
     '-File', "`"$PSCommandPath`"", $TaskId, $Tool, '-Worker'
   $workerStarted = $true
   $rt = Read-Rt $TaskId; $cur = Get-Last $rt
@@ -382,8 +388,14 @@ try {
     $cur.pid = $p.Id; $cur.pidStart = [long]$wp.StartTime.ToUniversalTime().Ticks
     Write-Rt $TaskId $rt
   }
+} catch {
+  if (-not $workerStarted -and $a -and $a.status -eq 'running') {
+    $a.status = 'error'; $a.finishedAt = Now; $a.note = "launch failed: $($_.Exception.Message)"
+    Write-Rt $TaskId $rt
+  }
+  throw
 } finally {
   if ($leaseToken -and -not $workerStarted) { [void](Invoke-Machine @('release', $leaseToken)) }
   $lock.Dispose(); Remove-Item $lockPath -ErrorAction SilentlyContinue
 }
-Write-Host "$TaskId attempt $n started in $Tool (visible window, pid $($p.Id)). log: $($a.log)"
+Write-Host "$TaskId attempt $n started in $Tool (pid $($p.Id)). log: $($a.log)"

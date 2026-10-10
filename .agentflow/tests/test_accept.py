@@ -59,6 +59,13 @@ class AcceptTests(unittest.TestCase):
         self.assertEqual(idx, sorted(idx), calls)
         self.assertFalse(any("branch -D" in c or "--force" in c for c in calls))
 
+    def test_invalid_status_stops_before_any_side_effect(self):
+        for status in ("ready", "blocked", "rejected", "cancelled", None):
+            with self.subTest(status=status):
+                calls, stopped = self.go(DEV, status=status)
+                self.assertIn("cannot accept ledger status", stopped)
+                self.assertEqual(calls, [])
+
     def test_verify_failure_stops_before_merge(self):
         calls, stopped = self.go(DEV, fail_on="gate.py verify")
         self.assertIsNotNone(stopped)

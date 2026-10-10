@@ -24,3 +24,13 @@ Chronological log of work on the AgentFlow template.
   paths, dashboard history and links, layout tests) and its fixes; added `install.py`, `accept.py`, VERSION, tests.
 - Protocol, roles, tool routing, Task File template, README, GUIDE, CHANGELOG updated. 19 tests pass.
 
+
+## 2026-10-10: Launcher reliability
+
+Implemented 2.11.3 launcher, end-check and acceptance repairs with regression tests in disposable repositories; deployment to the pilot follows the installer workflow.
+
+Final validation: 105/105 tests pass (including PowerShell 5.1/7 and fake-worker
+tick launch). Pilot full suite: 105/105; focused lifecycle rerun: 7/7. Pilot
+update committed as 66deac8 on master; no template drift or product changes.
+Conductor restarted hidden and reports zero needs/waits, with autostart enabled.
+A test-only temporary-directory cleanup race was fixed by waiting for worker exit.

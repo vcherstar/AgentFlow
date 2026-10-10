@@ -307,6 +307,8 @@ def preflight(tid, manual, live, tool=None):
 
     if (led.get(tid, {}).get("Notes") or "").startswith("awaiting approval"):
         bad.append(f"{tid} awaits the human's approval of the plan: python .agentflow/tools/ledger.py approve {tid} once approved")
+    if status.get(tid) not in ("ready", "in progress", "review", "blocked"):
+        bad.append(f"{tid}: missing or final ledger status; cannot launch")
     if not manual and role == "deployer":
         bad.append("a Deployer runs only in the session the human designated: use -Manual")
     if not manual and role == "tester" and t["target"] == "prod":
@@ -415,8 +417,23 @@ def worktree_copy_problems(t):
             bad.append(f"Result written in the worktree copy {copy}, not in {t['file']}: copy it there verbatim, "
                        "and drop any commit of it from the branch (protocol: Runtime state)")
         main = git("rev-parse", "--abbrev-ref", "HEAD", cwd=c["repo"]) or "main"
-        if Path(c["path"]).is_dir() and (log := git("log", "--format=%h %s", f"{main}..HEAD", "--", ".agentflow/tasks", cwd=c["path"])):
-            bad.append(f"branch {t['branch']} commits Task Files ({'; '.join(log.splitlines()[:3])}): only the main folder holds them")
+        if Path(c["path"]).is_dir():
+            # Walk unique commits without path-limited history simplification. Ordinary commits
+            # include edits later reverted; merges count only changes to the automatic merge.
+            commits = git("rev-list", "--parents", f"{main}..HEAD", cwd=c["path"])
+            for line in commits.splitlines():
+                sha, *parents = line.split()
+                if len(parents) > 2:
+                    bad.append(f"cannot audit octopus merge {sha}: use two-parent merges")
+                    continue
+                args = (("show", "--remerge-diff", "--format=", sha) if len(parents) == 2
+                        else ("diff-tree", "--root", "--no-commit-id", "-p", sha))
+                result = subprocess.run(["git", *args, "--", ".agentflow/tasks"], cwd=c["path"],
+                                        capture_output=True, text=True, encoding="utf-8", errors="replace")
+                if result.returncode:
+                    bad.append(f"cannot audit Task Files in {sha}: {result.stderr.strip()}")
+                elif result.stdout.strip():
+                    bad.append(f"branch {t['branch']} commits Task Files ({sha}): only the main folder holds them")
     return bad
 
 

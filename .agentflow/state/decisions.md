@@ -215,3 +215,7 @@ more than three parts. Suggested sentence lengths remain soft guidance because s
 limits can damage accuracy. Explicit HTML explanations are delivered as one
 self-contained interactive file. Rejected: copying these rules into entry points or
 making word counts mandatory.
+
+## 2026-10-10: Launcher reliability
+
+The human authorized lifecycle infrastructure repairs. Version 2.11.3 makes launcher issuance authoritative, omits empty live argv, audits unique commits and merge resolutions, and refuses invalid acceptance states before side effects. Failed handoffs remain issued with an error attempt for explicit recovery.

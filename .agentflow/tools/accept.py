@@ -89,6 +89,9 @@ def dirty(repo):
 
 def accept(tid, dry):
     t = gate.parse(tid)
+    status = ledger_rows().get(tid, {}).get("Status")
+    if status not in ("in progress", "review", "done"):
+        raise Stop(f"{tid}: cannot accept ledger status {status!r}; reconcile the launch before merging")
     repos = t["repos"]
     print(f"{tid}: role {t['role']}, repositories: {', '.join(r or '(this repository)' for r in repos)}")
     for r in sorted(set(repos) | {""}):

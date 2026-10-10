@@ -1,41 +1,17 @@
 # Session Handoff
 
-## As of
-
-2026-10-10: AgentFlow 2.11.1 instruction consolidation; see decisions and CHANGELOG.
-
-## Goal
-
-Keep AgentFlow small while its rules are enforced by the tools, not only written down.
+As of: 2026-10-10; AgentFlow 2.11.3 lifecycle repair.
 
 ## Verified state
 
-- 2.11.1 aligns authority, role startup, communication and branch rules; the pilot
-  was updated with install.py --update. Broader reliability improvements remain planned.
+The authorized launcher/end-check fixes are implemented: launcher-owned issuance,
+PowerShell 5.1 empty-argv compatibility, commit-by-commit task-file audit with
+merge-resolution checks, and acceptance status validation before merging.
+Real PowerShell 5.1/7 and disposable manual acceptance tests pass; tick launch
+was tested with a fake worker, without model calls. See session-log for full-suite results.
 
-- 2.11.0 merged: `machine_capacity.py` (shared tool slots, PORTs and limit resets across projects on
-  one machine), `route.py` effort question (`efforts` / `model_by_effort`), `upstream.py` template
-  drift report + `template-source.json` + the conductor's daily check. 93 tests pass.
-- Watermark Remover updated to 2.11.0 via `install.py --update`; `upstream.py --check` is clean.
+## Next
 
-## Assumptions
-
-- Projects run on Windows with PowerShell 7 and Python 3.
-
-## Open problems
-
-- 2026-10-10: consolidated improvement plan added at `docs/improvement-plan.md`.
-  It covers the audit plus instruction cleanup, measurable quotas, adaptive effort,
-  concurrency caps and bounded completion hooks. Stage 5 is planned, not implemented.
-  On 2026-10-10 the human lifted the inherited delegation/checkout ban for AgentFlow
-  projects; managed Team Mode is authorized, with resource limits and no recursive
-  worker delegation. The global Codex instructions and pilot rules now agree.
-
-- See `state/known-issues.md`.
-- `origin/main` is behind; push only on the human's word.
-
-## Files to read first
-
-1. `docs/ai-handoff-protocol.md`
-2. `state/current-step.md`
-3. `CHANGELOG.md`
+Watermark Remover is updated to 2.11.3; upstream check reports no drift.
+Broader reliability improvements remain in docs/improvement-plan.md.
+No push is authorized. No other project's installation is included.

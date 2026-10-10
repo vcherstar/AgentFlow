@@ -41,8 +41,8 @@ out with `install.py --update`.
 Status: planned.
 
 Implementation sequence and acceptance criteria: [improvement-plan.md](improvement-plan.md).
-The human requested analysis and inclusion in the plan on 2026-10-10; runtime
-implementation has not started. Cover trustworthy lifecycle and recovery first,
+The human authorized the bounded launcher/end-check repair on 2026-10-10;
+2.11.3 implements that subset. The broader stage remains planned. Cover recovery next,
 then artifact-bound completion checks, bounded automation and concise instructions.
 
 Exit criteria: the scenarios in that plan pass, migration preserves open tasks,

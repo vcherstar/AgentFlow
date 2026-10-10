@@ -165,7 +165,7 @@ Each family has one owner, and a label means one thing only.
 ### Flow
 
 1. The Orchestrator writes the Task File and adds the ledger row. A planned task starts `blocked` with Notes `awaiting approval` (the default of `ledger.py add`): nothing launches it, `gate.py preflight` refuses it, until the human approves the plan and the Orchestrator runs `python .agentflow/tools/ledger.py approve T-NNN ...` (`ready`). Tasks that need no new approval (successors of rejected tasks and Tester tasks within an approved goal) are added with `--status ready`. `Independent check:` is `tester` for a user-visible or risky change (data, auth, deploy scripts, shared config), otherwise `none - <reason>`; the human sees it in the plan.
-2. Launch ([Launching workers](#section-launching-workers)); ledger `in progress`.
+2. Launch ([Launching workers](#section-launching-workers)); the launcher sets the ledger to `in progress` before worker handoff, including direct and `-Manual` launches. A failed handoff records an error attempt for Recovery; tick does not repeat the transition.
 3. The worker fills `## Result`.
 4. The Orchestrator sets `review` and decides:
 

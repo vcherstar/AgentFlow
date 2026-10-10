@@ -89,6 +89,34 @@ class WorktreeCopyTests(unittest.TestCase):
     def test_clean_worktree_has_no_problem(self):
         self.assertEqual(self.problems(), [])
 
+    def commit(self, repo, message):
+        git(repo, "add", "-A")
+        git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", message)
+
+    def test_merge_of_main_memory_is_not_a_worker_edit(self):
+        (self.root / ".agentflow/tasks/other.md").write_text("main memory\n")
+        self.commit(self.root, "main memory")
+        (self.wt / "product.txt").write_text("work\n")
+        self.commit(self.wt, "product")
+        git(self.wt, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "--no-ff", "main", "-m", "sync")
+        self.assertEqual(self.problems(), [])
+
+    def test_reverted_task_edit_still_rejected(self):
+        (self.wt / ".agentflow/tasks/other.md").write_text("worker memory\n")
+        self.commit(self.wt, "bad edit")
+        git(self.wt, "-c", "user.name=t", "-c", "user.email=t@t", "revert", "--no-edit", "HEAD")
+        self.assertTrue(any("commits Task Files" in x for x in self.problems()))
+
+    def test_task_edit_introduced_in_merge_rejected(self):
+        (self.root / "main.txt").write_text("main\n")
+        self.commit(self.root, "main product")
+        (self.wt / "product.txt").write_text("work\n")
+        self.commit(self.wt, "product")
+        git(self.wt, "merge", "--no-ff", "--no-commit", "main")
+        (self.wt / ".agentflow/tasks/other.md").write_text("merge edit\n")
+        self.commit(self.wt, "merge with forbidden edit")
+        self.assertTrue(any("commits Task Files" in x for x in self.problems()))
+
     def test_result_in_the_copy_and_its_commit_are_reported(self):
         copy = self.wt / ".agentflow" / "tasks" / "T-001-probe.md"
         copy.write_text(copy.read_text(encoding="utf-8") + "Outcome: completed\n", encoding="utf-8")

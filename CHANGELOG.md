@@ -2,6 +2,25 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.3 - 2026-10-10
+
+- The launcher records issuance (`in progress`) for direct, automatic and manual
+  launches before worker handoff; tick no longer repeats that transition. Failed
+  handoff is recorded as an error attempt and releases its machine reservation.
+- Omit an empty `--live` argument, preserving Windows PowerShell 5.1 compatibility.
+- Audit unique commits without path-limited history simplification. Main-branch
+  memory inherited through a merge is allowed; task-file edits, reverted edits
+  and merge-resolution edits remain rejected. Unsupported merge audits fail closed.
+- Acceptance refuses missing, ready, blocked or final rejected/cancelled ledger
+  states before verification or merge. Worker processes start in hidden windows.
+- Regression coverage includes real PowerShell 5.1/7 launches, duplicate/retry and
+  failed launches, and a disposable end-to-end manual launch/acceptance cycle.
+
+Migration: stop an idle conductor, run `install.py --update`, then restart it.
+Do not update tools during active attempts. Existing incorrectly recorded tasks
+need an evidence-based one-time ledger reconciliation; no automatic promotion.
+Git must support `show --remerge-diff` for auditing two-parent merge commits.
+
 ## 2.11.2 - 2026-10-10
 
 - Communication now leads with the conclusion, keeps terminology stable, defines

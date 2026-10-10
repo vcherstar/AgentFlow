@@ -300,8 +300,7 @@ def do_launch(tid, tool):
     out = (p.stdout + p.stderr).strip()
     if p.returncode:
         return False, out[-300:]
-    code, lo = py(TOOLS / "ledger.py", "set", tid, "--status", "in progress")
-    return True, tool if code == 0 else f"{tool} started, but the ledger refused 'in progress': {lo[-200:]}"
+    return True, tool  # the launcher owns the transition, including direct/manual starts
 
 
 def lock():
