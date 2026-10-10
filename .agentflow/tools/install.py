@@ -18,7 +18,8 @@ A folder that holds several repositories (a workspace):
 
 What it writes (protocol section "Installing or updating AgentFlow"):
 - `<project>/.agentflow/`: the template-owned files (protocol, roles, commands, Task File template, tools, dashboard,
-  tests, README, VERSION). Project-owned memory files are created only when missing and never overwritten.
+  tests, README, VERSION). Project-owned memory files are created only when missing and never overwritten;
+  `template-source.json` records where the install came from (for `upstream.py`).
 - `AGENTS.md`, `CLAUDE.md`, `.gitignore`: one block between `agentflow:begin` / `agentflow:end` markers; the rest of
   an existing file is left exactly as it is. A missing file is created.
 - `.claude/commands/<name>.md`: one-line pointers to `.agentflow/commands/`; an existing file with other content is
@@ -36,6 +37,7 @@ import json
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 TEMPLATE_FLOW = Path(__file__).resolve().parent.parent  # <template>/.agentflow
@@ -43,6 +45,7 @@ TEMPLATE_FLOW = Path(__file__).resolve().parent.parent  # <template>/.agentflow
 # template-owned paths inside .agentflow/ (directories are copied recursively, minus SKIP)
 OWNED = ["README.md", "VERSION", "docs/ai-handoff-protocol.md", "docs/typesafe.md", "roles", "commands", "tasks/_template.md",
          "tools", "dashboard", "tests"]
+OWNED_DIRS = ("roles", "commands", "tools", "dashboard", "tests")
 SKIP = {"__pycache__", "out", "versions", ".runtime"}
 
 # project-owned files created once from a stub, never overwritten
@@ -66,8 +69,9 @@ STUBS = {
         '{\n  "policy": "<how to choose: what is free or has unused capacity, what is limited, testers on another tool>",\n'
         '  "jev_model": "jev-1.13.0",\n'
         '  "options": {\n'
-        '    "claude": {"tool": "claude", "what": "complex multi-file work and architecture", "not_for": "long mechanical work"},\n'
-        '    "codex": {"tool": "codex", "what": "long tasks, testers (sandboxed review)", "not_for": "UI design"}\n'
+        '    "claude": {"tool": "claude", "model": "sonnet", "efforts": ["low", "medium", "high", "xhigh", "max"], "what": "complex multi-file work and architecture", "not_for": "long mechanical work"},\n'
+        '    "codex": {"tool": "codex", "model": "gpt-6.1-sol", "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "what": "long tasks, testers (sandboxed review)", "not_for": "UI design"},\n'
+        '    "devin": {"tool": "devin", "model_by_effort": {"medium": "swe-2-medium", "high": "swe-2-high", "max": "swe-2-max"}, "what": "software implementation and testing", "not_for": "work that requires a different vendor model"}\n'
         '  }\n}\n'),
 }
 
@@ -245,7 +249,7 @@ def install(target: Path, update: bool, dry: bool, inside_repo: bool = False,
             raise SystemExit("STOP: template-owned files have uncommitted changes; commit or move them to Project "
                              "rules first:\n  " + "\n  ".join(changed))
         tpl = {rel for rel, _ in files}
-        for d in ("roles", "commands", "tools", "dashboard", "tests"):
+        for d in OWNED_DIRS:
             for f in sorted((flow / d).rglob("*")) if (flow / d).exists() else []:
                 rel = f.relative_to(flow).as_posix()
                 if f.is_file() and rel not in tpl and not (SKIP & set(f.relative_to(flow).parts)):
@@ -261,6 +265,26 @@ def install(target: Path, update: bool, dry: bool, inside_repo: bool = False,
         dst = flow / rel
         if not dst.exists():
             plan.write(dst, text, "create (project-owned stub)")
+
+    # where this install came from: project-owned, refreshed only when the source or version changes
+    src_file = flow / "template-source.json"
+    want = {"template": str(TEMPLATE_FLOW.parent.resolve()), "version": version()}
+    have = {}
+    if src_file.exists():
+        try:
+            have = json.loads(src_file.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            pass
+    if have.get("template") != want["template"] or have.get("version") != want["version"]:
+        at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        plan.write(src_file, json.dumps({**want, "at": at}, indent=2) + "\n", "record template source")
+
+    if not dry:   # so upstream.py finds this install even before its first launch
+        try:
+            import machine_capacity
+            machine_capacity.register_project(target)
+        except Exception:
+            pass
 
     if workspace:
         if not ws_file.exists():

@@ -21,11 +21,13 @@
     AGENTFLOW_CLAUDE, AGENTFLOW_AGY, AGENTFLOW_DEVIN   other tool executables (same rules as AGENTFLOW_CODEX)
     AGENTFLOW_CLAUDE_ARGS, AGENTFLOW_AGY_ARGS, AGENTFLOW_DEVIN_ARGS   extra arguments for those tools
   A Task File line `Model: <model>[, effort=<level>]` adds the tool's model and reasoning-effort flags for that task
-  (codex: -m / -c model_reasoning_effort; agy: --model / --effort; claude, devin: --model).
+  (codex: -m / -c model_reasoning_effort; claude and agy: --model / --effort; devin: --model, with effort
+  encoded in its model id).
     AGENTFLOW_PYTHON      Python 3 executable for gate.py; default: `python` unless it is the Microsoft Store
                           stub, then `py -3`
   The worker window receives the launcher's AGENTFLOW_* variables and PATH through tasks\.runtime\T-NNN.env.json:
   a Store-packaged pwsh does not pass the parent's environment to a window it starts.
+  machine_capacity.py reserves tool slots and the task's PORT across AgentFlow projects before any worktree setup.
 #>
 param(
   [Parameter(Position = 0)][string]$TaskId,
@@ -41,6 +43,7 @@ $ErrorActionPreference = 'Stop'
 $flowRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $root = (Resolve-Path (Join-Path $flowRoot '..')).Path
 $rtDir = Join-Path $flowRoot 'tasks\.runtime'
+$machine = Join-Path $PSScriptRoot 'machine_capacity.py'
 New-Item -ItemType Directory -Force $rtDir | Out-Null
 $env:PYTHONUTF8 = '1'
 
@@ -107,6 +110,7 @@ function Get-ModelArgs([string]$tool, $t) {   # machine defaults from AGENTFLOW_
   if ($t.effort) {
     switch ($tool) {
       'codex' { $extra += '-c', "model_reasoning_effort=$($t.effort)" }
+      'claude' { $extra += '--effort', $t.effort }
       'agy' { $extra += '--effort', $t.effort }
       default { Write-Warning "$tool takes no separate effort flag; put the level in the model name (Model: $($t.model))" }
     }
@@ -120,6 +124,11 @@ function Invoke-Gate([string]$cmd, [string]$id, [string[]]$more = @()) {   # too
   $msg = & $py @pyArgs (Join-Path $flowRoot 'tools\gate.py') $cmd $id @more --out $out 2>&1
   if ($LASTEXITCODE -ge 2 -or -not (Test-Path $out)) { throw "gate.py $cmd ${id}: $msg" }
   try { Get-Content $out -Raw -Encoding utf8 | ConvertFrom-Json } finally { Remove-Item $out -ErrorAction SilentlyContinue }
+}
+function Invoke-Machine([string[]]$argv) {
+  $py = $python[0]; $pyArgs = @($python | Select-Object -Skip 1)
+  $reply = & $py @pyArgs $machine @argv 2>&1
+  return [pscustomobject]@{ code = $LASTEXITCODE; text = (@($reply) -join "`n").Trim() }
 }
 # State: tasks\.runtime\T-NNN.json = { taskId, attempts: [...] }. Attempts are appended, never overwritten.
 function Read-Rt([string]$id) {
@@ -224,6 +233,7 @@ if ($Stop) {
     $a.exitCode = -1; $a.note = 'stopped with -Stop'
     Complete-Attempt $TaskId $rt 'error'
   }
+  if ($a.machineLease) { [void](Invoke-Machine @('release', $a.machineLease)) }
   Write-Host "$TaskId stopped, lock released"; return
 }
 
@@ -263,9 +273,14 @@ if ($Worker) {
   } catch {}
   $ErrorActionPreference = 'Continue'   # native stderr must not abort the worker
   $spec = $Tools[$Tool]
-  $rt = Read-Rt $TaskId; $log = (Get-Last $rt).log
+  $rt = Read-Rt $TaskId; $attempt = Get-Last $rt; $log = $attempt.log
   $code = 1; $note = $null
   try {
+    if ($attempt.machineLease) {
+      $started = [long](Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
+      $activation = Invoke-Machine @('activate', $attempt.machineLease, "$PID", '--pid-start', "$started")
+      if ($activation.code) { throw "machine capacity activation failed: $($activation.text)" }
+    }
     # inside try: the window closes on exit, so a setup error must end up in the state file
     $t = Invoke-Gate task $TaskId
     Set-Location -LiteralPath $t.workdir -ErrorAction Stop
@@ -292,9 +307,10 @@ if ($Worker) {
   Set-Location -LiteralPath $root   # leave the checkout so it can be removed
   $rt = Read-Rt $TaskId; $a = Get-Last $rt   # re-read: the launcher wrote the pid after start
   $a.exitCode = $code
-  $a.limitHit = (Test-Path $log) -and [bool](Get-Content $log -Tail 50 | Select-String -Pattern 'usage limit|rate limit|quota|session limit|hit your limit' -Quiet)
+  $a.limitHit = (Test-Path $log) -and [bool](Get-Content $log -Tail 50 | Select-String -Pattern 'usage limit|rate limit|quota|session limit|hit your limit|out of credits|disabled[^\r\n]*subscription access|subscription access[^\r\n]*disabled|ask your admin to enable access' -Quiet)
   if ($note) { $a.note = $note }
   Complete-Attempt $TaskId $rt $(if ($code -eq 0) { 'exited' } else { 'error' })
+  if ($attempt.machineLease) { [void](Invoke-Machine @('release', $attempt.machineLease)) }
   Write-Host "`n$TaskId attempt $($a.n): $($a.status) (exit $code)."
   return   # no -NoExit: the window closes here
 }
@@ -307,6 +323,7 @@ if ((Test-Path $lockPath) -and ((Get-Date) - (Get-Item $lockPath).LastWriteTime)
 }
 try { $lock = [IO.File]::Open($lockPath, 'CreateNew', 'Write', 'None') }
 catch { throw "another run-task.ps1 launch is in progress ($lockPath). Wait and check -Status." }
+$leaseToken = $null; $workerStarted = $false
 try {
   $rt = Read-Rt $TaskId; $prev = Get-Last $rt
   if (Test-Held $prev) {
@@ -324,6 +341,15 @@ try {
   }
   $t = $pf.task
   if (-not $Manual -and $t.role -notin 'developer', 'tester') { throw "Role '$($t.role)': the launcher starts developer and tester only. Use -Manual." }
+  if (-not $Manual) {
+    $launcherStart = [long](Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
+    $claimArgs = @('claim', $Tool, $root, $TaskId, '--pid', "$PID", '--pid-start', "$launcherStart")
+    if ($t.env.PORT) { $claimArgs += @('--port', [string]$t.env.PORT) }
+    $claim = Invoke-Machine $claimArgs
+    if ($claim.code -eq 4) { throw "machine capacity wait: $($claim.text)" }
+    if ($claim.code) { throw "machine capacity failed: $($claim.text)" }
+    $leaseToken = $claim.text
+  }
   Initialize-Workdir $t
   if ($Tool -eq 'agy') { Write-Host "Antigravity: make sure '$($t.workdir)' is in its trusted folders before the first run." }
 
@@ -332,7 +358,8 @@ try {
   $a = [pscustomobject][ordered]@{ n = $n; tool = $(if ($Tool) { $Tool } else { 'manual' }); toolArgs = $(if ($Tool -eq 'codex') { $codexArgs -join ' ' })
     role = $t.role; manual = $Manual.IsPresent; status = 'running'; pid = $null; pidStart = $null; exitCode = $null
     startedAt = Now; finishedAt = $null; limitHit = $false; target = $t.target; workdir = $t.workdir
-    log = $(if ($Manual) { $null } else { Join-Path $rtDir "$TaskId.$n.log" }); baseline = (Invoke-Gate task $TaskId).baseline; note = $null }
+    log = $(if ($Manual) { $null } else { Join-Path $rtDir "$TaskId.$n.log" }); baseline = (Invoke-Gate task $TaskId).baseline
+    machineLease = $leaseToken; note = $null }
   $rt.attempts = @($rt.attempts) + $a
   Write-Rt $TaskId $rt   # running attempt = lock for the worker's lifetime
 
@@ -348,6 +375,7 @@ try {
   $ps = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
   $p = Start-Process $ps -PassThru -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass',
     '-File', "`"$PSCommandPath`"", $TaskId, $Tool, '-Worker'
+  $workerStarted = $true
   $rt = Read-Rt $TaskId; $cur = Get-Last $rt
   $wp = Get-Process -Id $p.Id -ErrorAction SilentlyContinue   # window closes on exit: may be gone already
   if ($cur.status -eq 'running' -and $wp) {   # worker may already have finished (e.g. tool not found)
@@ -355,6 +383,7 @@ try {
     Write-Rt $TaskId $rt
   }
 } finally {
+  if ($leaseToken -and -not $workerStarted) { [void](Invoke-Machine @('release', $leaseToken)) }
   $lock.Dispose(); Remove-Item $lockPath -ErrorAction SilentlyContinue
 }
 Write-Host "$TaskId attempt $n started in $Tool (visible window, pid $($p.Id)). log: $($a.log)"

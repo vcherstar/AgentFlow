@@ -15,8 +15,9 @@ Everything AgentFlow needs lives in this folder, so it never collides with a pro
 | `tasks/.runtime/` | local | attempt history, logs, evidence (git-ignored) |
 | `state/` | project | handoff, current step, decisions, known issues, session log, Task Ledger |
 | `workspace.json` | project | workspace only: the product repositories under the workspace root |
-| `docs/model-options.json` | project | tools and models the project may use, with free or limited windows, for `route.py` |
-| `tools/` | template | `run-task.ps1` launcher, `gate.py`, `ledger.py`, `accept.py`, `route.py` (TypeSafe), `install.py`, `paths.py` |
+| `docs/model-options.json` | project | tools, model families, effort variants, and availability windows for `route.py` |
+| `template-source.json` | project | where this install came from (written by `install.py`); `upstream.py` reads it |
+| `tools/` | template | `run-task.ps1` launcher, `machine_capacity.py` shared machine slots, `upstream.py` template drift report, `gate.py`, `ledger.py`, `accept.py`, `route.py` (TypeSafe), `install.py`, `paths.py` |
 | `dashboard/` | template | read-only view for the human (`python .agentflow/dashboard/build.py`) |
 | `tests/` | template | checks of the tools themselves (`python -m unittest discover -s .agentflow/tests`) |
 

@@ -28,6 +28,9 @@ elif sys.argv[1] == "next-orchestrator":
 '''
 
 FAKE_TOOL = "@echo off\r\necho args: %*\r\necho ERROR: You've hit your usage limit. Try again at 3:30 PM.\r\nexit /b 1\r\n"
+FAKE_DISABLED_TOOL = ("@echo off\r\necho args: %*\r\n"
+                      "echo Your organization has disabled Claude subscription access for Claude Code. "
+                      "Use an Anthropic API key instead, or ask your admin to enable access\r\nexit /b 1\r\n")
 
 NEED = {"task": "T-7", "action": "need", "detail": "tester Outcome completed, Verdict fail: decide on T-6"}
 
@@ -42,11 +45,13 @@ class ConductorTests(unittest.TestCase):
         (self.root / ".agentflow" / "state").mkdir()
         shutil.copy(FLOW / "tools" / "conductor.ps1", tools)
         shutil.copy(FLOW / "tools" / "conductor-panel.ps1", tools)
+        shutil.copy(FLOW / "tools" / "machine_capacity.py", tools)
         (tools / "tick.py").write_text(FAKE_TICK, encoding="utf-8")
         self.rt = self.root / ".agentflow" / "tasks" / ".runtime"
         self.rt.mkdir(parents=True)
         for tool in ("codex", "devin"):
             (self.root / f"fake-{tool}.cmd").write_text(FAKE_TOOL, encoding="ascii")
+        (self.root / "fake-claude.cmd").write_text(FAKE_DISABLED_TOOL, encoding="ascii")
 
     def tearDown(self):
         for _ in range(20):  # a session window may still hold its log for a moment
@@ -64,6 +69,8 @@ class ConductorTests(unittest.TestCase):
     def conduct(self, *args, next_tool="codex"):
         env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTFLOW_")}
         env.update({"AGENTFLOW_PYTHON": sys.executable, "FAKE_NEXT": next_tool,
+                    "AGENTFLOW_MACHINE_STATE_DIR": str(self.root / "machine"),
+                    "AGENTFLOW_CLAUDE": str(self.root / "fake-claude.cmd"),
                     "AGENTFLOW_CODEX": str(self.root / "fake-codex.cmd"), "AGENTFLOW_DEVIN": str(self.root / "fake-devin.cmd")})
         r = subprocess.run([PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                             str(self.root / ".agentflow" / "tools" / "conductor.ps1"), "-Once", "-NoNotify", *args],
@@ -106,6 +113,23 @@ class ConductorTests(unittest.TestCase):
         self.conduct()
         self.assertNotIn("session", self.state())
 
+    def test_busy_machine_slot_waits_and_retries_after_release(self):
+        self.report(needs=[NEED])
+        env = dict(os.environ, AGENTFLOW_MACHINE_STATE_DIR=str(self.root / "machine"))
+        helper = FLOW / "tools" / "machine_capacity.py"
+        claim = subprocess.run([sys.executable, str(helper), "claim", "codex", str(self.root), "other-project",
+                                "--pid", str(os.getpid())], capture_output=True, text=True, env=env, check=True)
+        token = claim.stdout.strip()
+        try:
+            out = self.conduct()
+            self.assertIn("waiting for shared machine capacity", out)
+            self.assertNotIn("session", self.state())
+            self.assertFalse(self.state().get("needsKey"))
+        finally:
+            subprocess.run([sys.executable, str(helper), "release", token], env=env, check=True)
+        self.conduct()
+        self.assertEqual(self.wait_finished(1)["tool"], "codex")
+
     def test_hand_over_then_next_tool_after_a_usage_limit(self):
         self.report(needs=[NEED])
         self.conduct()
@@ -126,6 +150,22 @@ class ConductorTests(unittest.TestCase):
         s = self.wait_finished(2)
         self.assertEqual(s["tool"], "devin")
         self.assertIn("--permission-mode dangerous", Path(s["log"]).read_text(encoding="utf-8", errors="replace"))
+
+    def test_disabled_subscription_access_hands_over_to_the_next_tool(self):
+        self.report(needs=[NEED])
+        self.conduct(next_tool="claude")
+        s = self.wait_finished(1)
+        self.assertEqual(s["tool"], "claude")
+        self.assertTrue(s["limitHit"])
+        self.assertIn("disabled Claude subscription access",
+                      Path(s["log"]).read_text(encoding="utf-8", errors="replace"))
+        calls = self.calls()
+        self.assertTrue(any(c.startswith("limit claude") for c in calls), calls)
+
+        out = self.conduct(next_tool="codex")
+        self.assertIn("Background Orchestrator (claude) finished", out)
+        s = self.wait_finished(2)
+        self.assertEqual(s["tool"], "codex")
 
     def test_same_needs_wait_for_the_cooldown(self):
         self.report(needs=[NEED])

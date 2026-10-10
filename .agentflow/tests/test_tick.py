@@ -1,4 +1,5 @@
 """tick.py: which steps it takes without judgment, which it leaves to an Orchestrator, limits and the heartbeat."""
+import os
 import sys
 import tempfile
 import unittest
@@ -33,7 +34,8 @@ class TickTests(unittest.TestCase):
         rt = Path(self.tmp.name)
         self.patches = [patch.object(tick, "RT", rt), patch.object(tick, "HEARTBEAT", rt / "orchestrator.json"),
                         patch.object(tick, "LIMITS", rt / "tool-limits.json"), patch.object(tick, "TICK", rt / "tick.json"),
-                        patch.object(tick, "LOCK", rt / "tick.lock")]
+                        patch.object(tick, "LOCK", rt / "tick.lock"),
+                        patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name})]
         for p in self.patches:
             p.start()
 
@@ -110,6 +112,25 @@ class TickTests(unittest.TestCase):
             tick.record_limit("codex", "usage limit")
             self.assertEqual(tick.next_orchestrator(), "devin")
             self.assertEqual(tick.next_orchestrator(datetime.now(timezone.utc) + timedelta(hours=4)), "claude")
+
+    def test_next_orchestrator_skips_a_busy_machine_slot(self):
+        with patch.dict(tick.os.environ, {"AGENTFLOW_ORCHESTRATORS": "codex,devin"}):
+            token, reason = tick.machine_capacity.claim("codex", FLOW.parent, "other-project", pid=os.getpid())
+            self.assertTrue(token, reason)
+            try:
+                self.assertEqual(tick.next_orchestrator(), "devin")
+            finally:
+                tick.machine_capacity.release(token)
+
+    def test_disabled_subscription_access_temporarily_skips_the_tool(self):
+        message = ("Your organization has disabled Claude subscription access for Claude Code · "
+                   "Use an Anthropic API key instead, or ask your admin to enable access")
+        self.assertIsNotNone(tick.LIMIT_RE.search(message))
+        with patch.dict(tick.os.environ, {"AGENTFLOW_ORCHESTRATORS": "claude,codex,devin,agy"}):
+            entry = tick.record_limit("claude", message, at=AT)
+            self.assertEqual(tick.next_orchestrator(AT), "codex")
+            self.assertEqual(entry["until"], tick.iso(AT + timedelta(hours=1)))
+            self.assertEqual(tick.next_orchestrator(AT + timedelta(hours=1, seconds=1)), "claude")
 
     def test_heartbeat_is_one_holder_at_a_time(self):
         self.assertIsNone(tick.heartbeat("claude"))

@@ -1,6 +1,7 @@
 """Project Preflight rule "- parallel: <tool>=<n>": no more than n running attempts of a tool on this machine.
 Regression: two Codex sessions at once on Windows locked the sandbox and user accounts (error 1909)."""
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -43,6 +44,8 @@ Resume: none
 class ParallelRuleTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.machine_env = patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name})
+        self.machine_env.start()
         self.root = Path(self.tmp.name) / "p"
         flow = self.root / ".agentflow"
         shutil.copytree(FLOW / "tools", flow / "tools", ignore=shutil.ignore_patterns("__pycache__"))
@@ -63,6 +66,7 @@ class ParallelRuleTests(unittest.TestCase):
             {"taskId": "T-001", "attempts": [{"n": 1, "tool": "codex", "status": "running", "pid": 1}]}), encoding="utf-8")
 
     def tearDown(self):
+        self.machine_env.stop()
         self.tmp.cleanup()
 
     def tool(self, name, *args):

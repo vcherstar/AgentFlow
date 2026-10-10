@@ -2,12 +2,14 @@
 it (tick.py, gate.py preflight) until ledger.py approve. Regression: the conductor would have launched a freshly
 planned task within minutes, before the human said yes."""
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 FLOW = Path(__file__).resolve().parents[1]
 
@@ -47,6 +49,8 @@ Probe.
 class ApprovalTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.machine_env = patch.dict(os.environ, {"AGENTFLOW_MACHINE_STATE_DIR": self.tmp.name})
+        self.machine_env.start()
         self.root = Path(self.tmp.name) / "p"
         flow = self.root / ".agentflow"
         shutil.copytree(FLOW / "tools", flow / "tools", ignore=shutil.ignore_patterns("__pycache__"))
@@ -57,6 +61,7 @@ class ApprovalTests(unittest.TestCase):
         self.flow = flow
 
     def tearDown(self):
+        self.machine_env.stop()
         self.tmp.cleanup()
 
     def tool(self, name, *args, check=True):

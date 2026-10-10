@@ -21,6 +21,10 @@ def option(choice, confidence, probabilities):
     return {"type": "choice", "choice": choice, "confidence": confidence, "probabilities": probabilities}
 
 
+def effort(choice="medium", confidence=0.95):
+    return option(choice, confidence, {choice: 0.96, "high" if choice != "high" else "medium": 0.04})
+
+
 def complexity(score, confidence=0.8):
     return {"type": "score", "score": score, "confidence": confidence,
             "probabilities": {"0": 0.1, "1": 0.3, "2": 0.6}, "legend": {"0": "Small", "1": "Moderate", "2": "Hard"}}
@@ -104,11 +108,14 @@ class RouteTests(unittest.TestCase):
         (flow / "tasks" / "T-001-probe.md").write_text(TASK, encoding="utf-8")
         y, t = (TODAY - timedelta(days=1)).isoformat(), (TODAY + timedelta(days=1)).isoformat()
         (flow / "docs" / "model-options.json").write_text(json.dumps({"policy": "free first", "options": {
-            "codex-max": {"tool": "codex", "model": "gpt-6.1-sol", "effort": "xhigh", "what": "long tasks",
+            "codex-max": {"tool": "codex", "model": "gpt-6.1-sol",
+                          "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "what": "long tasks",
                           "not_for": "tiny edits", "examples": ["rewrite the queue"]},
-            "devin-high": {"tool": "devin", "model": "swe-2-high", "what": "most tasks", "max_complexity": 1,
+            "devin-high": {"tool": "devin", "model_by_effort": {"medium": "swe-2-medium", "high": "swe-2-high"},
+                           "what": "most tasks", "max_complexity": 1,
                            "escalate_to": "devin-max"},
-            "devin-max": {"tool": "devin", "model": "swe-2-max", "what": "hardest tasks"},
+            "devin-max": {"tool": "devin", "model_by_effort": {"high": "swe-2-high", "max": "swe-2-max"},
+                          "what": "hardest tasks"},
             "devin-old": {"tool": "devin", "model": "swe-1", "what": "expired", "until": y},
             "agy-later": {"tool": "agy", "what": "quota back", "from": t},
             "claude": {"tool": "claude", "describe": "architecture (old describe field)", "roles": ["developer"]}}}),
@@ -135,7 +142,8 @@ class RouteTests(unittest.TestCase):
         return json.loads((self.root / ".agentflow" / "tasks" / ".runtime" / "T-001.route.json").read_text(encoding="utf-8"))
 
     def test_request_follows_the_documented_shape(self):
-        Fake.answers = {"option": option("codex-max", 0.95, {"codex-max": 0.96, "claude": 0.04}), "complexity": complexity(0.4)}
+        Fake.answers = {"option": option("codex-max", 0.95, {"codex-max": 0.96, "claude": 0.04}),
+                        "effort": effort("xhigh"), "complexity": complexity(0.4)}
         r = self.route("T-001")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn(KEY, r.stdout + r.stderr)
@@ -145,28 +153,34 @@ class RouteTests(unittest.TestCase):
         body = sent["body"]
         self.assertEqual(body["model"], "jev-1.13.0", "the Jev version is pinned")
         self.assertIsInstance(body["state"], dict, "state is an object with named fields")
+        self.assertEqual(body["state"]["routing_date"], TODAY.isoformat())
         self.assertEqual(body["state"]["task"]["goal"], "Add a settings switch.")
-        self.assertEqual(sorted(body["questions"]), ["complexity", "option"], "two atomic questions in one request")
+        self.assertEqual(sorted(body["questions"]), ["complexity", "effort", "option"],
+                         "three atomic questions are sent in one parallel request")
         self.assertEqual(body["questions"]["complexity"]["type"], "score")
         self.assertEqual(len(body["questions"]["complexity"]["criteria"]), 3)
         crit = body["questions"]["option"]["criteria"]
         self.assertEqual(sorted(crit), ["claude", "codex-max", "devin-high", "devin-max"],
                          "expired and not-yet-available options are left out")
         self.assertEqual(crit["codex-max"]["not_for"], "tiny edits")
+        self.assertEqual(crit["codex-max"]["supported_efforts"],
+                         ["low", "medium", "high", "xhigh", "max", "ultra"])
         self.assertEqual(crit["claude"]["what"], "architecture (old describe field)")
         self.assertEqual(body["questions"]["option"]["instructions"]["project_policy"], "free first")
         self.assertIn("300 in / 30 out tokens, request req_test", r.stdout)
         self.assertEqual(self.log()[-1]["requestId"], "req_test")
 
     def test_high_band_apply_writes_tool_and_model(self):
-        Fake.answers = {"option": option("codex-max", 0.95, {"codex-max": 0.96, "claude": 0.04}), "complexity": complexity(0.4)}
+        Fake.answers = {"option": option("codex-max", 0.95, {"codex-max": 0.96, "claude": 0.04}),
+                        "effort": effort("xhigh"), "complexity": complexity(0.4)}
         r = self.route("T-001", "--apply")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("Tool: codex\nModel: gpt-6.1-sol, effort=xhigh\n", self.task())
         self.assertIn("| codex |", (self.root / ".agentflow" / "state" / "tasks.md").read_text(encoding="utf-8"))
 
     def test_medium_band_is_shown_not_applied(self):
-        Fake.answers = {"option": option("claude", 0.7, {"claude": 0.8, "codex-max": 0.2}), "complexity": complexity(0.4)}
+        Fake.answers = {"option": option("claude", 0.7, {"claude": 0.8, "codex-max": 0.2}),
+                        "effort": effort(), "complexity": complexity(0.4)}
         before = self.task()
         r = self.route("T-001", "--apply")
         self.assertEqual(r.returncode, 4)
@@ -174,7 +188,8 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(self.task(), before)
 
     def test_low_band_is_no_decision(self):
-        Fake.answers = {"option": option("claude", 0.3, {"claude": 0.5, "codex-max": 0.5}), "complexity": complexity(0.4)}
+        Fake.answers = {"option": option("claude", 0.3, {"claude": 0.5, "codex-max": 0.5}),
+                        "effort": effort(), "complexity": complexity(0.4)}
         before = self.task()
         r = self.route("T-001", "--apply")
         self.assertEqual(r.returncode, 3)
@@ -182,19 +197,30 @@ class RouteTests(unittest.TestCase):
 
     def test_hard_task_escalates_to_the_stronger_option(self):
         Fake.answers = {"option": option("devin-high", 0.95, {"devin-high": 0.96, "devin-max": 0.04}),
-                        "complexity": complexity(1.8)}
+                        "effort": effort("xhigh"), "complexity": complexity(1.8)}
         r = self.route("T-001", "--apply")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("escalated to devin-max", r.stdout)
         self.assertIn("Tool: devin\nModel: swe-2-max\n", self.task())
         self.assertEqual((self.log()[-1]["jevChoice"], self.log()[-1]["choice"]), ("devin-high", "devin-max"))
+        self.assertEqual(self.log()[-1]["resolvedEffort"], "max")
+        self.assertIsNone(self.log()[-1]["effort"], "Devin's concrete model id already contains the effort")
 
     def test_moderate_task_stays(self):
         Fake.answers = {"option": option("devin-high", 0.95, {"devin-high": 0.96, "devin-max": 0.04}),
-                        "complexity": complexity(1.2)}
+                        "effort": effort("medium"), "complexity": complexity(1.2)}
         r = self.route("T-001")
         self.assertNotIn("escalated", r.stdout)
         self.assertEqual(self.log()[-1]["choice"], "devin-high")
+
+    def test_effort_confidence_controls_the_overall_band(self):
+        Fake.answers = {"option": option("codex-max", 0.96, {"codex-max": 0.97, "claude": 0.03}),
+                        "effort": effort("high", 0.7), "complexity": complexity(1.2)}
+        before = self.task()
+        r = self.route("T-001", "--apply")
+        self.assertEqual(r.returncode, 4)
+        self.assertIn("overall 0.70 (medium)", r.stdout)
+        self.assertEqual(self.task(), before)
 
     def test_no_key_and_api_errors_are_not_crashes(self):
         r = self.route("T-001", key=False)
@@ -210,7 +236,8 @@ class RouteTests(unittest.TestCase):
     def test_started_task_is_not_rewritten(self):
         subprocess.run([sys.executable, self.root / ".agentflow" / "tools" / "ledger.py", "set", "T-001", "--status",
                         "in progress"], check=True, capture_output=True)
-        Fake.answers = {"option": option("codex-max", 0.95, {"codex-max": 0.96}), "complexity": complexity(0.4)}
+        Fake.answers = {"option": option("codex-max", 0.95, {"codex-max": 0.96}),
+                        "effort": effort("medium"), "complexity": complexity(0.4)}
         before = self.task()
         r = self.route("T-001", "--apply")
         self.assertEqual(r.returncode, 3)

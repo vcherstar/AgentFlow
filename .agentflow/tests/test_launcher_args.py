@@ -62,6 +62,10 @@ ConvertTo-Json -Compress @($x)
         args = self.run_case("agy", "m1", "high", {"AGENTFLOW_AGY_ARGS": "--effort low"})
         self.assertEqual(args, ["--model", "m1", "--effort", "high"])
 
+    def test_claude_model_and_effort(self):
+        args = self.run_case("claude", "opus", "xhigh", {"AGENTFLOW_CLAUDE_ARGS": "--effort medium"})
+        self.assertEqual(args, ["--model", "opus", "--effort", "xhigh"])
+
 
 if __name__ == "__main__":
     unittest.main()
