@@ -87,6 +87,11 @@ to role ownership. Project rules specify the human's language.
 - Do not invent screenshots or files; link a screenshot only if it exists in `screenshots/`.
 - Do not repeat failed attempts listed in `.agentflow/state/known-issues.md`.
 - Talk to the human in Russian unless Project rules name another language: an optional `Status: <LABEL>` line, then a short explanation that adds information; do not repeat the status in words or quote this file unless asked. Machine-facing files (rules, roles, Task Files, memory) stay in English; a human explanation is written from them when needed, never stored as a second copy.
+- Lead with the conclusion, then provide supporting detail. Keep one main action per sentence when practical, one topic per paragraph, and no more than six sentences per paragraph.
+- Use one stable term for each concept. Define an unfamiliar term in plain language at first use, then keep the same term.
+- Present procedures as numbered steps. For a process with more than three parts, add a compact text diagram when it improves understanding.
+- Treat 20 words for an instruction and 25 words for a description as brevity guides, not hard limits; never omit words needed for accuracy or clarity.
+- When the human asks to explain something in HTML, produce one self-contained interactive HTML file.
 
 ## Section: Roles and memory ownership
 

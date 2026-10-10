@@ -2,6 +2,18 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.2 - 2026-10-10
+
+- Communication now leads with the conclusion, keeps terminology stable, defines
+  unfamiliar terms in plain language and formats procedures as numbered steps.
+- Long processes may use compact text diagrams; sentence word counts are guidance,
+  not hard limits, so brevity cannot remove information needed for correctness.
+- An explicit request for an HTML explanation produces one self-contained interactive
+  HTML file.
+
+Migration from 2.11.1: run `install.py --update`. No project-owned files require
+manual changes.
+
 ## 2.11.1 - 2026-10-10
 
 - Clarify human instruction authority, configurable project parameters and mandatory

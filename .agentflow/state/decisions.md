@@ -205,3 +205,13 @@ Root entry points link to role-specific startup. Main-branch naming and ordinary
 Orchestrator branches are explicit; historical installation data is not current policy.
 The Codex global file holds personal defaults and points AgentFlow projects to their
 installed rules. Task evidence and acceptance safeguards remain mandatory.
+
+## 2026-10-10: Adopt structured explanation guidelines (2.11.2)
+
+The human chose to make the reviewed explanation style part of AgentFlow rather than
+one tool's global configuration. Communication leads with the conclusion, keeps terms
+stable, defines new terms plainly, numbers procedures, and may diagram processes with
+more than three parts. Suggested sentence lengths remain soft guidance because strict
+limits can damage accuracy. Explicit HTML explanations are delivered as one
+self-contained interactive file. Rejected: copying these rules into entry points or
+making word counts mandatory.
