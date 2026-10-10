@@ -2,8 +2,8 @@
 
 ## Now
 
-AgentFlow 2.11.0 is on `main` (merged): shared machine capacity across projects, effort routing in
-route.py, upstream template sync. Watermark Remover was updated to 2.11.0 and reports no drift.
+AgentFlow 2.11.1 includes instruction consolidation; the 2.11.0 baseline provides: shared machine capacity across projects, effort routing in
+route.py, upstream template sync. Watermark Remover was updated to 2.11.1 and reports no drift.
 
 ## Next action
 

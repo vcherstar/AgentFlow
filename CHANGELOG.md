@@ -2,6 +2,20 @@
 
 What changed in each AgentFlow version. Why it changed: `.agentflow/state/decisions.md`. The version of an installed project: `.agentflow/VERSION` (2.1.x: `AgentFlow version:` in its `AGENTS.md`).
 
+## 2.11.1 - 2026-10-10
+
+- Clarify human instruction authority, configurable project parameters and mandatory
+  acceptance safeguards; centralize communication and role-specific context loading.
+- Define ordinary branches for Orchestrator/Single Mode changes, with the primary
+  checkout back on the configured main branch before launches and acceptance.
+- Entry points link to session procedures instead of imposing duplicate read lists.
+
+Migration: run install.py --update. In project-owned instructions remove copied
+workflow rules in favor of protocol links; keep main branch, mode, checkout roots
+and engineering commands locally. Replace obsolete statistics bans, distinguish
+historical install versions from VERSION, and remove contradictory main-folder-only
+editing rules. User-global files are never changed by the installer.
+
 ## 2.11.0 - 2026-10-10
 
 - New `.agentflow/tools/machine_capacity.py`: an OS-locked registry at `%LOCALAPPDATA%\AgentFlow\machine\registry.json` (per OS account) coordinates every AgentFlow project on the machine — an atomic tool-slot claim before a launch (default: one Codex machine-wide; `AGENTFLOW_MACHINE_<TOOL>_MAX` and a project's `- parallel: <tool>=<n>` tighten it; the lowest active rule wins), a `PORT` reservation for workers, tool-limit times shared between projects, pending-claim handoff to the worker process, and dead-PID lease cleanup. `run-task.ps1` and `conductor.ps1` claim, activate and release leases; `tick.py` shares observed limits machine-wide and skips tools without capacity in `next-orchestrator`; a busy slot waits and is retried on a later round instead of failing. Found in a project: two AgentFlow projects on one machine could both start a Codex session on the single Windows sandbox account — the failure 2.10.0 guards inside one project.

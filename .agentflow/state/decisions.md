@@ -196,3 +196,12 @@ improvements made inside a project never flowed back to the template: `upstream.
 directions, `template-source.json` remembers where an install came from, the conductor checks once a day, and a
 change is generalized before it enters the template. Rejected: a central service (an OS file lock is enough at this
 scale); auto-merging project diffs upstream (generalization is a judgment — the human reviews candidates).
+
+## 2026-10-10: Consolidate instruction ownership (2.11.1)
+
+Human-approved cleanup: platform-independent workflow and communication live in
+the protocol; project-owned files hold parameters and engineering constraints.
+Root entry points link to role-specific startup. Main-branch naming and ordinary
+Orchestrator branches are explicit; historical installation data is not current policy.
+The Codex global file holds personal defaults and points AgentFlow projects to their
+installed rules. Task evidence and acceptance safeguards remain mandatory.

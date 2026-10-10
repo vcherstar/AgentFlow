@@ -2,13 +2,16 @@
 
 ## As of
 
-2026-10-10, `main` @ 479c107 - AgentFlow 2.11.0.
+2026-10-10: AgentFlow 2.11.1 instruction consolidation; see decisions and CHANGELOG.
 
 ## Goal
 
 Keep AgentFlow small while its rules are enforced by the tools, not only written down.
 
 ## Verified state
+
+- 2.11.1 aligns authority, role startup, communication and branch rules; the pilot
+  was updated with install.py --update. Broader reliability improvements remain planned.
 
 - 2.11.0 merged: `machine_capacity.py` (shared tool slots, PORTs and limit resets across projects on
   one machine), `route.py` effort question (`efforts` / `model_by_effort`), `upstream.py` template

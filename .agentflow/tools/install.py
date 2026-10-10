@@ -92,7 +92,7 @@ def agents_block():
 
 AgentFlow version: {version()}. Workflow files live in `.agentflow/`; this block is template-owned and replaced on update.
 
-Source of truth: `.agentflow/docs/ai-handoff-protocol.md`. Read it first, then follow it. Project rules:
+Workflow and instruction authority: `.agentflow/docs/ai-handoff-protocol.md`. Start with the applicable session section below. Project settings:
 `.agentflow/docs/project-rules.md` (and any rules in this file outside this block).
 
 - With a role (`.agentflow/roles/<role>.md`, or `/start-role <role> ...`): protocol section "Starting a role session".

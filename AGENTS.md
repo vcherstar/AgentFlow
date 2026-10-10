@@ -5,9 +5,9 @@ This repository is the AgentFlow template. Its product is `.agentflow/` plus the
 <!-- agentflow:begin -->
 ## AgentFlow
 
-AgentFlow version: 2.11.0. Workflow files live in `.agentflow/`; this block is template-owned and replaced on update.
+AgentFlow version: 2.11.1. Workflow files live in `.agentflow/`; this block is template-owned and replaced on update.
 
-Source of truth: `.agentflow/docs/ai-handoff-protocol.md`. Read it first, then follow it. Project rules:
+Workflow and instruction authority: `.agentflow/docs/ai-handoff-protocol.md`. Start with the applicable session section below. Project settings:
 `.agentflow/docs/project-rules.md` (and any rules in this file outside this block).
 
 - With a role (`.agentflow/roles/<role>.md`, or `/start-role <role> ...`): protocol section "Starting a role session".
@@ -17,6 +17,8 @@ Source of truth: `.agentflow/docs/ai-handoff-protocol.md`. Read it first, then f
 <!-- agentflow:end -->
 
 ## Project rules
+
+- Repository parameters: [.agentflow/docs/project-rules.md](.agentflow/docs/project-rules.md).
 
 - This repository develops the template itself: template-owned files are its product (`.agentflow/README.md`).
 - A change to the protocol, a role, a tool or the dashboard gets a `CHANGELOG.md` entry, a version bump in
