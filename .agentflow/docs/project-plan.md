@@ -35,3 +35,15 @@ Status: current.
 Exit criteria: `upstream.py` drift reports from every installed project are reviewed periodically;
 changes that flow upstream are generalized, released (CHANGELOG, VERSION, decisions.md) and rolled
 out with `install.py --update`.
+
+### Stage 5. Reliability and efficient project practices
+
+Status: planned.
+
+Implementation sequence and acceptance criteria: [improvement-plan.md](improvement-plan.md).
+The human requested analysis and inclusion in the plan on 2026-10-10; runtime
+implementation has not started. Cover trustworthy lifecycle and recovery first,
+then artifact-bound completion checks, bounded automation and concise instructions.
+
+Exit criteria: the scenarios in that plan pass, migration preserves open tasks,
+and the pilot installation receives the tested release without template drift.

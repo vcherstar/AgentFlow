@@ -21,6 +21,11 @@ Keep AgentFlow small while its rules are enforced by the tools, not only written
 
 ## Open problems
 
+- 2026-10-10: consolidated improvement plan added at `docs/improvement-plan.md`.
+  It covers the audit plus instruction cleanup, measurable quotas, adaptive effort,
+  concurrency caps and bounded completion hooks. Stage 5 is planned, not implemented.
+  Current human rules prohibit delegation and secondary checkouts during this work.
+
 - See `state/known-issues.md`.
 - `origin/main` is behind; push only on the human's word.
 
